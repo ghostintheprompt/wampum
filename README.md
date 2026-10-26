@@ -1,5 +1,7 @@
 # Wampum
 
+![Wampum artwork: Rockaway marshes, wampum, and jets over Kennedy Airport](Resources/WampumIcon.png)
+
 **Early source prototype · v0.1.1.** [Source and releases](https://github.com/ghostintheprompt/wampum). Built and tested for a personal red-team workflow on an M4 Mac mini with 16 GB. [Release verification](RELEASE_EVIDENCE.md). [Native release check](docs/release-editor.png).
 
 A native macOS workbench for local security research and prototype development. Built for a Mac mini M4 with 16 GB unified memory. A companion to Avant Garde, for Ghost's research workflow.
