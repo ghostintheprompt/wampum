@@ -1,6 +1,6 @@
 # Wampum
 
-**Early source prototype · v0.1.0.** [Source and releases](https://github.com/ghostintheprompt/wampum). Built and tested for a personal red-team workflow on an M4 Mac mini with 16 GB. [Release verification](RELEASE_EVIDENCE.md).
+**Early source prototype · v0.1.1.** [Source and releases](https://github.com/ghostintheprompt/wampum). Built and tested for a personal red-team workflow on an M4 Mac mini with 16 GB. [Release verification](RELEASE_EVIDENCE.md). [Native release check](docs/release-editor.png).
 
 A native macOS workbench for local security research and prototype development. Built for a Mac mini M4 with 16 GB unified memory. A companion to Avant Garde, for Ghost's research workflow.
 
@@ -179,7 +179,7 @@ WAMPUM_CONTROLLER_LIVE=1 swift test --filter ControllerAppTests
 
 These are distinct evidence levels. The default suite exercises local fixtures and failure paths. Live-model tests require an installed model and may affect local load. Browser/controller tests use an owned loopback page, not a client environment. The cross-repository provenance integration uses a sibling `coding_agent_monitor_lab` checkout and installed Node, and explicitly skips that integration when its prerequisites are absent.
 
-The isolated release snapshot default run executed 91 tests: 84 passed and 7 explicitly skipped. With local-model/browser/controller flags it passed 88 with 3 skips. The original workspace additionally tested its sibling-monitor integration. See RELEASE_EVIDENCE.md for exact scope and prerequisites. The subsequent installed-Qwen/Playwright click test passed with proposal, explicit operator approval, page change and console evidence. The monitor's separate suite passed 30 assertions and 11 replay tests. Tests are recorded by scope; none of those counts establishes professional engagement success.
+The isolated release snapshot default run executed 93 tests: 86 passed and 7 explicitly skipped. With local-model/browser/controller flags it passed 90 with 3 skips. The original workspace additionally tested its sibling-monitor integration. See RELEASE_EVIDENCE.md for exact scope and prerequisites. The subsequent installed-Qwen/Playwright click test passed with proposal, explicit operator approval, page change and console evidence. The monitor's separate suite passed 30 assertions and 11 replay tests. Tests are recorded by scope; none of those counts establishes professional engagement success.
 
 ## Approval and source evidence
 
@@ -207,3 +207,8 @@ npm install --prefix browser-tools --no-audit --no-fund @playwright/mcp@0.0.83
 In Browser, set Node to the actual executable from `command -v node` and the MCP server path to `browser-tools/node_modules/@playwright/mcp/cli.js` inside your checkout. Existing npm-cache installations can also be detected. Connect Local, then run Browser Check against its owned loopback page before allowing external browsing. The optional browser dependency has its own transitive packages; the Swift package has no third-party Swift dependencies. A different MCP version needs compatibility testing.
 
 Source release only: no notarized installer, automatic updater or bundled model/browser. Build with the Xcode command-line tools. The reference development toolchain is Swift 6.4 on macOS 26.6.2; the declared app target is macOS 14+. Earlier toolchains/OS releases are not a verified matrix.
+
+
+### Native release QA correction
+
+The first public source cut passed its fixture/service checks, then native QA from a temporary checkout exposed inconsistent `/tmp` and `/private/tmp` path aliases. The explorer trimmed incorrect relative names, and resolution needed the same canonical form on both sides. Version0.1.1 canonicalizes enumeration and resolution, with two regression tests covering alias roots, Unicode project names and safe saves. Native QA then opened a listed source file, discovered the actual installed model, reviewed the exact request and saved a real READY response (185 prompt tokens,2 output tokens). This correction is retained in the build record.

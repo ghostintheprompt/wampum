@@ -9,3 +9,6 @@ Evidence: default fixture suite, separately opt-in installed-model/browser/contr
 Open: browser/MCP descendant cleanup and deliberately detached processes; long native sessions and cold-cancellation/queue conditions; streaming output; tabs/search/diffs/LSP/Git/interactive terminal; signed independently anchored provenance; full OS/toolchain/deployment matrix. Direct browser controls without explicit approval records remain unlinked in monitor replay.
 
 No private case data, runtime state, machine-specific MCP config or private handoff history ships in this snapshot. Development timestamps are checkpoints, not continuous working hours.
+
+
+Version0.1.1: fixed macOS temporary alias handling found by native QA after the first source cut. Added two alias/Unicode/save regressions. Snapshot totals93 tests; default86 pass/7 skips, local-service90 pass/3 skips. Native file opening/model discovery/reviewed response also verified. See RELEASE_EVIDENCE.md.

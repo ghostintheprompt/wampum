@@ -13,8 +13,8 @@ public struct Workspace {
     public func resolve(_ path: String, existing: Bool = true) throws -> URL {
         guard !path.isEmpty, !path.hasPrefix("/"), !path.split(separator: "/").contains("..") else { throw WorkbenchError.invalid("Use a relative path inside the project.") }
         let target = root.appendingPathComponent(path).standardizedFileURL
-        let resolved = target.resolvingSymlinksInPath()
-        guard resolved.path.hasPrefix(root.path + "/") else { throw WorkbenchError.invalid("Path leaves the selected project.") }
+        let resolved = target.resolvingSymlinksInPath().standardizedFileURL
+        guard resolved.path.hasPrefix(root.path == "/" ? "/" : root.path + "/") else { throw WorkbenchError.invalid("Path leaves the selected project.") }
         if existing && !FileManager.default.fileExists(atPath: resolved.path) { throw WorkbenchError.invalid("File does not exist: \(path)") }
         return resolved
     }
@@ -31,7 +31,12 @@ public struct Workspace {
         for case let url as URL in enumerator {
             let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
             if ignored.contains(url.lastPathComponent) || values.isSymbolicLink == true { enumerator.skipDescendants(); continue }
-            if values.isDirectory != true { output.append(String(url.path.dropFirst(root.path.count + 1))) }
+            if values.isDirectory != true {
+                let canonical=url.resolvingSymlinksInPath().standardizedFileURL
+                let prefix=root.path == "/" ? "/" : root.path+"/"
+                guard canonical.path.hasPrefix(prefix) else{throw WorkbenchError.invalid("Enumerated file leaves the project.")}
+                output.append(String(canonical.path.dropFirst(prefix.count)))
+            }
             if output.count >= 2000 { break }
         }
         return output.sorted()

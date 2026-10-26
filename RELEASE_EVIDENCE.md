@@ -1,4 +1,4 @@
-# v0.1.0 prototype verification
+# v0.1.1 prototype verification
 
 October 26, 2026. Public source assembled from local development commit 3f77f51, excluding private handoffs/history, runtime state and machine-specific client configurations. This public repository starts from a reviewed snapshot. Local checkpoint IDs in README refer to the development record, not commits available in this release history.
 
@@ -6,8 +6,8 @@ Reference machine: Apple M4 Mac mini, 16 GB unified memory, macOS 26.6.2, Apple 
 
 | Scope | Result |
 |---|---|
-| Isolated source default suite |91 executed, 84 passed, 7 explicit skips, 0 failures|
-| Same source with local-model/browser/controller flags |91 executed, 88 passed, 3 explicit skips, 0 failures|
+| Isolated source default suite |93 executed, 86 passed, 7 explicit skips, 0 failures|
+| Same source with local-model/browser/controller flags |93 executed, 90 passed, 3 explicit skips, 0 failures|
 | Fresh release app build |Passed; all 3 executables bundled|
 | App signature verification |Ad-hoc signature verified; no notarization or public binary installer|
 | Source privacy selection |No private history/handoff, live state, machine-specific MCP configuration or private case material included|
@@ -28,3 +28,10 @@ codesign --verify --deep --strict build/Wampum.app
 ```
 
 Installed services are opt-in. Tests never install a model. Browser dependencies need explicit setup described in README. See STATUS.md for unimplemented work and coverage limits.
+
+
+## Native QA and0.1.1 path correction
+
+Native launch after the initial0.1.0 source cut exposed inconsistent macOS temporary-path aliases. Version0.1.1 canonicalizes enumerated and resolved paths before relative-path handling. Two new tests pass for `/tmp`/`/private/tmp` roots, Unicode names, readable file listings and safe saves. All default and local-service checks above were rerun against the patched snapshot.
+
+The rebuilt native app then displayed correct relative names, opened a source file through the explorer, discovered Qwen, showed its actual capabilities, presented the frozen request review, and saved the real local READY response. Prompt185/output2 were observed in the app. Screenshot: docs/release-editor.png. Only temporary release state and public source were used; the original work session stayed open.

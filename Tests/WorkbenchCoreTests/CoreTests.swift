@@ -19,4 +19,27 @@ final class CoreTests:XCTestCase {
     func testOversizedCurrentPromptRejected()throws{XCTAssertThrowsError(try ContextPacket.build(system:"scope",history:[ChatMessage(role:"user",content:String(repeating:"x",count:20000))],context:4096))}
     func testRemoteOllamaRejected()throws{XCTAssertThrowsError(try OllamaClient(base:URL(string:"https://external.example")!));XCTAssertNoThrow(try OllamaClient())}
     func testInstalledModelNamePreserved()throws{let data=Data("{\"name\":\"lukey03/Qwen3.5-9B-abliterated\",\"size\":5600000000}".utf8);let m=try JSONDecoder().decode(LocalModel.self,from:data);XCTAssertEqual(m.name,"lukey03/Qwen3.5-9B-abliterated")}
+    func testTemporaryAliasesListResolvableRelativePaths()throws {
+        let root=URL(fileURLWithPath:"/private/tmp").appendingPathComponent("wampum-path-"+UUID().uuidString)
+        try FileManager.default.createDirectory(at:root.appendingPathComponent("nested"),withIntermediateDirectories:true)
+        defer{try? FileManager.default.removeItem(at:root)}
+        try Data("alias-content".utf8).write(to:root.appendingPathComponent("nested/file.txt"))
+        for input in [root,URL(fileURLWithPath:root.path.replacingOccurrences(of:"/private/tmp/",with:"/tmp/"))] {
+            let workspace=try Workspace(root:input)
+            XCTAssertEqual(try workspace.files(),["nested/file.txt"])
+            XCTAssertEqual(try workspace.read("nested/file.txt"),"alias-content")
+            XCTAssertThrowsError(try workspace.resolve("../outside.txt"))
+        }
+    }
+    func testUnicodeProjectListingAndSafeSaveThroughAlias()throws {
+        let root=URL(fileURLWithPath:"/private/tmp").appendingPathComponent("wampum-caffè-"+UUID().uuidString)
+        try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
+        defer{try? FileManager.default.removeItem(at:root)}
+        let workspace=try Workspace(root:root)
+        try workspace.save("prova.txt",content:"before",expected:nil,backupDirectory:root.appendingPathComponent(".backups"))
+        XCTAssertEqual(try workspace.files(),["prova.txt"])
+        try workspace.save("prova.txt",content:"after",expected:"before",backupDirectory:root.appendingPathComponent(".backups"))
+        XCTAssertEqual(try workspace.read("prova.txt"),"after")
+    }
+
 }
