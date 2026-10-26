@@ -1,0 +1,3 @@
+// swift-tools-version: 5.9
+import PackageDescription
+let package = Package(name: "Wampum", platforms: [.macOS(.v14)], products: [.executable(name: "Wampum", targets: ["Wampum"]), .executable(name:"WampumController",targets:["WampumController"]), .executable(name:"WampumIntegrity",targets:["WampumIntegrity"])], targets: [.target(name: "WorkbenchCore"), .executableTarget(name: "Wampum", dependencies: ["WorkbenchCore"]), .executableTarget(name:"WampumController",dependencies:["WorkbenchCore"]), .executableTarget(name:"WampumIntegrity",dependencies:["WorkbenchCore"]), .testTarget(name: "WorkbenchCoreTests", dependencies: ["WorkbenchCore"]), .testTarget(name: "WorkbenchAppTests", dependencies: ["Wampum", "WorkbenchCore"])])

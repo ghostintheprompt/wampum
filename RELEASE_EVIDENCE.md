@@ -1,0 +1,30 @@
+# v0.1.0 prototype verification
+
+October 26, 2026. Public source assembled from local development commit 3f77f51, excluding private handoffs/history, runtime state and machine-specific client configurations. This public repository starts from a reviewed snapshot. Local checkpoint IDs in README refer to the development record, not commits available in this release history.
+
+Reference machine: Apple M4 Mac mini, 16 GB unified memory, macOS 26.6.2, Apple Swift 6.4. Ollama 0.33.2. Installed model lukey03/Qwen3.5-9B-abliterated:latest, 9B Q4_K_M, completion/tools/thinking, no reported vision.
+
+| Scope | Result |
+|---|---|
+| Isolated source default suite |91 executed, 84 passed, 7 explicit skips, 0 failures|
+| Same source with local-model/browser/controller flags |91 executed, 88 passed, 3 explicit skips, 0 failures|
+| Fresh release app build |Passed; all 3 executables bundled|
+| App signature verification |Ad-hoc signature verified; no notarization or public binary installer|
+| Source privacy selection |No private history/handoff, live state, machine-specific MCP configuration or private case material included|
+
+The default skips comprise optional local services, scenario/profile measurements and the absent sibling-monitor integration. Live flags enable installed Qwen, actual isolated Chrome/Playwright and the real local controller helper. Remaining 3 skips are scenario-memory/profile opt-ins and the absent sibling-monitor integration. The separate original-workspace monitor integration was tested before snapshotting; it is not inferred to run in this checkout.
+
+The live browser check recorded a Qwen click proposal, explicit approval, changed loopback page marker and matching console evidence. The controller check exercised scoped handoff, reviewed observation, queued click, operator execution, status and revocation. No external assistant-provider turn or client engagement was used.
+
+This run's warmed-request cancellation returned in 0.02747 seconds. Following READY completed in 0.3380 seconds. Warmup reported 9.946 seconds of loading. These are short-request observations on this machine, not throughput, peak-memory or long-session benchmarks. Server-side compute-stop timing was not established.
+
+Reproduce:
+
+```sh
+swift test
+WAMPUM_LIVE_TEST=1 WAMPUM_BROWSER_LIVE=1 WAMPUM_CONTROLLER_LIVE=1 swift test
+scripts/build-app.sh
+codesign --verify --deep --strict build/Wampum.app
+```
+
+Installed services are opt-in. Tests never install a model. Browser dependencies need explicit setup described in README. See STATUS.md for unimplemented work and coverage limits.

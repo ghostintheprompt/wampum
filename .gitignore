@@ -1,0 +1,14 @@
+.build/
+build/
+.DS_Store
+.swiftpm/
+*.xcuserstate
+
+.mcp.json
+
+.codex/config.toml
+
+browser-tools/
+artifacts/
+.env
+.env.*
