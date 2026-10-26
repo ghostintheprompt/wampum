@@ -30,8 +30,8 @@ codesign --verify --deep --strict build/Wampum.app
 Installed services are opt-in. Tests never install a model. Browser dependencies need explicit setup described in README. See STATUS.md for unimplemented work and coverage limits.
 
 
-## Native QA and0.1.1 path correction
+## Native QA and 0.1.1 path correction
 
-Native launch after the initial0.1.0 source cut exposed inconsistent macOS temporary-path aliases. Version0.1.1 canonicalizes enumerated and resolved paths before relative-path handling. Two new tests pass for `/tmp`/`/private/tmp` roots, Unicode names, readable file listings and safe saves. All default and local-service checks above were rerun against the patched snapshot.
+Native launch after the initial 0.1.0 source cut exposed inconsistent macOS temporary-path aliases. Version 0.1.1 canonicalizes enumerated and resolved paths before relative-path handling. Two new tests pass for `/tmp`/`/private/tmp` roots, Unicode names, readable file listings and safe saves. All default and local-service checks above were rerun against the patched snapshot.
 
-The rebuilt native app then displayed correct relative names, opened a source file through the explorer, discovered Qwen, showed its actual capabilities, presented the frozen request review, and saved the real local READY response. Prompt185/output2 were observed in the app. Screenshot: docs/release-editor.png. Only temporary release state and public source were used; the original work session stayed open.
+The rebuilt native app then displayed correct relative names, opened a source file through the explorer, discovered Qwen, showed its actual capabilities, presented the frozen request review, and saved the real local READY response. Prompt 185 / output 2 were observed in the app. Screenshot: docs/release-editor.png. Only temporary release state and public source were used; the original work session stayed open.
