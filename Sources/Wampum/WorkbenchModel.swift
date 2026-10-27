@@ -18,6 +18,7 @@ import WorkbenchCore
     @Published var running = false
     @Published var proposal = ""
     @Published var showProposal = false
+    @Published var pendingCloseTab: String?
     @Published var error: String?
     @Published var networkEvents:[NetworkEvent]=[]
     @Published var showNetworkConfirmation=false
@@ -132,21 +133,61 @@ import WorkbenchCore
             status=target.lab.map{"Active scenario: \($0.id)"} ?? "General workspace restored."
         } catch {self.error=error.localizedDescription}
     }
+    /// A failed checkpoint must prevent destructive editor transitions.
+    func checkpointSession() throws {
+        guard !persistenceBlocked else { throw WorkbenchError.invalid("Repair session storage before closing or replacing drafts.") }
+        try saveEditorSession(session)
+        let directory = store.directory.appendingPathComponent("checkpoints")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        let url = directory.appendingPathComponent("\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString).json")
+        try JSONEncoder().encode(session.persistableEditorSession).write(to: url, options: .atomic)
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
     func snapshot() {
-        persist()
+        do { try checkpointSession(); status = "Checkpoint saved." }
+        catch { self.error = error.localizedDescription }
+    }
+    func saveEditorSession(_ target: Session) throws {
+        guard !persistenceBlocked else { throw WorkbenchError.invalid("Repair session storage before changing editor tabs.") }
+        if target.lab != nil { try ScenarioStore(directory: store.directory).save(target) }
+        try store.save(target)
+    }
+    var editorDocuments: [EditorDocument] { session.editorDocuments }
+    func requestCloseTab(_ path: String) {
+        guard !showProposal, !showRequestReview else { error = "Finish the current file or model-request review before closing a tab."; return }
+        guard let document = editorDocuments.first(where: { $0.path == path }) else { return }
+        if document.dirty { pendingCloseTab = path }
+        else { closeEditorTab(path) }
+    }
+    func saveAndCloseTab(_ path: String) {
+        guard saveEditorTab(path) else { return }
+        closeEditorTab(path)
+    }
+    func closeEditorTab(_ path: String, discardChanges: Bool = false) {
+        guard !showProposal, !showRequestReview else { error = "Finish the current review before closing a tab."; return }
+        let documents = editorDocuments
+        guard let index = documents.firstIndex(where: { $0.path == path }) else { return }
+        guard !documents[index].dirty || discardChanges else { error = "Save or explicitly discard this draft before closing it."; return }
         do {
-            let directory = store.directory.appendingPathComponent("checkpoints")
-            try FileManager.default.createDirectory(at:directory,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
-            let url = directory.appendingPathComponent("\(Int(Date().timeIntervalSince1970))-\(UUID().uuidString).json")
-            try JSONEncoder().encode(session).write(to:url,options:.atomic)
-            try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:url.path)
-            status = "Checkpoint saved."
+            if documents[index].dirty { try checkpointSession() }
+            let remaining = documents.filter { $0.path != path }
+            var target = session.persistableEditorSession
+            target.editorTabs = remaining
+            if session.file == path {
+                if !remaining.isEmpty {
+                    let next = remaining[min(index, remaining.count - 1)]
+                    target.file = next.path; target.draft = next.draft; target.original = next.original
+                } else { target.file = ""; target.draft = ""; target.original = nil }
+            }
+            try saveEditorSession(target)
+            session = target; pendingCloseTab = nil
+            status = "Closed \(path)." + (documents[index].dirty ? " Discarded draft retained in a checkpoint." : "")
         } catch { self.error = error.localizedDescription }
     }
     func chooseProject() {
         let panel=NSOpenPanel();panel.canChooseDirectories=true;panel.canChooseFiles=false;panel.allowsMultipleSelection=false
         if panel.runModal() == .OK, let url=panel.url {
-            if busy || running || showRequestReview || browser.connected || browser.busy || browser.disconnecting || controller.enabled {error="Finish the active run or review before changing projects.";return};snapshot();session=Session();session.project=url.path;refreshFiles();persist();status="Project: \(url.lastPathComponent)"
+            if busy || running || showRequestReview || showProposal || browser.connected || browser.busy || browser.disconnecting || controller.enabled {error="Finish the active run or review before changing projects.";return};do { try checkpointSession(); session=Session();session.project=url.path;refreshFiles();persist();status="Project: \(url.lastPathComponent)" } catch { self.error=error.localizedDescription }
         }
     }
     func refreshFiles() {
@@ -155,25 +196,47 @@ import WorkbenchCore
         catch { self.error=error.localizedDescription }
     }
     func openFile(_ path: String) {
-        if dirty { snapshot() }
-        do { guard let workspace else { return };let text=try workspace.read(path);session.file=path;session.original=text;session.draft=text;persist() }
-        catch { self.error=error.localizedDescription }
-    }
-    func saveFile() {
+        guard !showProposal, !showRequestReview else { error = "Finish the current file or model-request review before switching tabs."; return }
         do {
-            guard let workspace,!session.file.isEmpty else { return }
-            try workspace.save(session.file,content:session.draft,expected:session.original,backupDirectory:store.directory.appendingPathComponent("file-backups"))
-            session.original=session.draft;persist();refreshFiles();status="Saved \(session.file). Prior contents backed up."
-        } catch { self.error=error.localizedDescription }
+            guard let workspace else { return }
+            _ = try workspace.resolve(path, existing: false)
+            let document: EditorDocument
+            if let cached = editorDocuments.first(where: { $0.path == path }) { document = cached }
+            else { let text = try workspace.read(path); document = EditorDocument(path: path, draft: text, original: text) }
+            if session.file == path { return }
+            if dirty { try checkpointSession() }
+            let target = session.selectingEditor(document)
+            try saveEditorSession(target)
+            session = target
+            status = "Opened \(path). Drafts stay in their tabs."
+        } catch { self.error = error.localizedDescription }
     }
+    @discardableResult func saveEditorTab(_ path: String) -> Bool {
+        do {
+            guard let workspace, let document = editorDocuments.first(where: { $0.path == path }) else { return false }
+            guard !persistenceBlocked else { throw WorkbenchError.invalid("Repair session storage before saving drafts.") }
+            try workspace.save(path, content: document.draft, expected: document.original, backupDirectory: store.directory.appendingPathComponent("file-backups"))
+            var target = session.persistableEditorSession
+            if let index = target.editorTabs?.firstIndex(where: { $0.path == path }) { target.editorTabs?[index].original = document.draft }
+            if target.file == path { target.original = document.draft }
+            // Keep the in-memory baseline correct even if session persistence fails after the file write.
+            session = target
+            try saveEditorSession(target)
+            refreshFiles(); status = "Saved \(path). Prior contents backed up."
+            return true
+        } catch { self.error = error.localizedDescription; return false }
+    }
+    func saveFile() { _ = saveEditorTab(session.file) }
     func newFile() {
         guard let workspace else { return }
-        if dirty { snapshot() }
+        guard !showProposal, !showRequestReview else { error="Finish the current review before creating a file."; return }
         let panel=NSSavePanel();panel.directoryURL=workspace.root;panel.nameFieldStringValue="case-notes.md"
         if panel.runModal() == .OK,let url=panel.url {
             guard url.path.hasPrefix(workspace.root.path+"/") else { error="Choose a path inside the project.";return }
             let relative=String(url.path.dropFirst(workspace.root.path.count+1))
             if FileManager.default.fileExists(atPath:url.path){error="Choose a new filename; no existing file was overwritten.";return}
+            do { try checkpointSession() } catch { self.error=error.localizedDescription; return }
+            session.editorTabs=session.editorDocuments
             session.file=relative;session.original=nil
             session.draft="# Research case\n\n## Objective\n\n## Authorized scope\n\n## Hypothesis\n\n## Reproduction\n\n## Expected behavior\n\n## Observed behavior\n\n## Evidence\n\n## Fix and verification\n\n## Remaining questions\n"
             persist();saveFile()
@@ -183,7 +246,7 @@ import WorkbenchCore
         guard !busy && !running && !browser.connected && !browser.busy && !browser.disconnecting,!controller.enabled else { error="Disconnect the browser and stop the current run before restoring.";return }
         let panel=NSOpenPanel();panel.directoryURL=store.directory.appendingPathComponent("checkpoints");panel.allowedContentTypes=[.json]
         if panel.runModal() == .OK,let url=panel.url {
-            do { let restored=try JSONDecoder().decode(Session.self,from:Data(contentsOf:url));snapshot();session=restored;refreshFiles();persist();status="Checkpoint restored; draft is not yet written to the project." }
+            do { let restored=try JSONDecoder().decode(Session.self,from:Data(contentsOf:url));try checkpointSession();session=restored;refreshFiles();persist();status="Checkpoint restored; draft is not yet written to the project." }
             catch { self.error=error.localizedDescription }
         }
     }
@@ -299,7 +362,10 @@ import WorkbenchCore
         guard let first=text.range(of:"```"), let line=text[first.upperBound...].firstIndex(of:"\n"),let close=text.range(of:"```",range:text.index(after:line)..<text.endIndex) else { error="Ask Qwen for one complete file in a fenced code block.";return }
         proposal=String(text[text.index(after:line)..<close.lowerBound]);showProposal=true
     }
-    func applyProposal() { snapshot();session.draft=proposal;showProposal=false;persist();status="Proposal loaded into editor. Review and Save to write it." }
+    func applyProposal() {
+        do { try checkpointSession(); session.draft=proposal; showProposal=false; persist(); status="Proposal loaded into editor. Review and Save to write it." }
+        catch { self.error=error.localizedDescription }
+    }
     func refreshNetwork() { Task { do { networkEvents=try await networkGuard.recent() } catch { self.error=error.localizedDescription } } }
     func requestExternalRun() {
         guard !running,!command.isEmpty,workspace != nil else{return}

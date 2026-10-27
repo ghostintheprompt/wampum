@@ -66,6 +66,7 @@ public struct Session: Codable {
     public var file = ""
     public var draft = ""
     public var original: String? = nil
+    public var editorTabs: [EditorDocument]? = nil
     public var notes = ""
     public var scope = ""
     public var prompt = ""
@@ -85,7 +86,7 @@ public struct SessionStore {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
     }
     public func save(_ session: Session) throws {
-        let data = try JSONEncoder().encode(session)
+        let data = try JSONEncoder().encode(session.persistableEditorSession)
         try data.write(to: directory.appendingPathComponent("session.json"), options: [.atomic])
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: directory.appendingPathComponent("session.json").path)
     }

@@ -37,7 +37,7 @@ A separate live local smoke test discovered `lukey03/Qwen3.5-9B-abliterated:late
 
 ## Still being built
 
-This version has a plain native text editor, reviewed response-to-file staging, a noninteractive check runner, scenario memory, image/OCR inputs, and reviewed single-step browser control through Playwright MCP. Syntax highlighting/LSP, Git review UI, streaming responses, editor tabs, general autonomous tool execution, project indexing, and a measured older-context summarizer remain implementation work. STATUS.md records the public prototype queue.
+This version has a plain native text editor, reviewed response-to-file staging, a noninteractive check runner, scenario memory, image/OCR inputs, and reviewed single-step browser control through Playwright MCP. Syntax highlighting/LSP, Git review UI, streaming responses, general autonomous tool execution, project indexing, and a measured older-context summarizer remain implementation work. STATUS.md records the public prototype queue.
 
 MIT licensed. This is an early source release. Build it locally with the commands above.
 
@@ -193,7 +193,7 @@ The monitor accepts an approval link only when its call hash, independently decl
 
 The public snapshot excludes private handoff notes/history, machine-specific client configurations, case material and runtime state. Development checkpoint IDs above refer to the original local development history; this public repository starts from a reviewed source snapshot. The public build record preserves the decisions and failures without publishing private work. The app has no account, but an opted-in external controller can use its own provider account and external tools can transmit data.
 
-Still open: detached/reparented browser process containment, full native long-session testing, cold-cancellation/queue cases, streaming responses, tabs/search/diffs/LSP/Git/interactive terminal, independent baseline anchoring and stronger context provenance. Build the next layer when its workflow is needed and testable. A prototype release does not turn those into shipped features.
+Still open: detached/reparented browser process containment, full native long-session testing, cold-cancellation/queue cases, streaming responses, project search/diffs/LSP/Git/interactive terminal, independent baseline anchoring and stronger context provenance. Build the next layer when its workflow is needed and testable. A prototype release does not turn those into shipped features.
 
 
 ## Browser prerequisites
@@ -224,3 +224,18 @@ Two real-process regressions cover TERM-ignoring children/grandchildren, cancell
 This owns the spawned group, not every possible descendant. Deliberate setsid/setpgid escape, reparented helpers outside the observed tree, force quit/power loss and complete OS-level containment remain open. The existing browser profile, network approvals and no-cloud-fallback policy are unchanged.
 
 Repeat the regression with `swift test --filter MCPProcessTests`. The actual browser check is `WAMPUM_BROWSER_LIVE=1 swift test --filter BrowserAppTests.testLiveBrowserTransportDescendantCleanup`; it requires the existing Node/Playwright/Chrome setup and installs nothing.
+
+
+## Editor tabs and draft recovery — October 27, 2026
+
+Open files remain as named tabs. Each retains its own draft and last-read disk baseline; switching tabs does not write either project file. Tab order, selection and drafts are saved with the session and separately for each scenario. Older one-file sessions become a tab without losing their draft. Only the explicitly attached current editor enters a model request, not every open tab.
+
+The active tab has an underline; unsaved tabs have a dot. Closing a clean tab selects a neighbour. Closing an unsaved tab offers Save and Close, Discard Draft, or Cancel. Save and Close writes only that file and retains the existing outside-change check. Discard leaves the project file alone and keeps a recovery checkpoint accessible through Restore. Storage/checkpoint failures block destructive transitions. Review sheets block tab switching so a file proposal cannot change targets mid-review.
+
+Eight regressions cover multiple drafts/restart, active-only and background saves, outside edits, clean/dirty closes, checkpoint retention, failed storage/proposal staging, legacy sessions, missing files and scenario isolation. Native review used a separate app identity and synthetic project: editing beta, switching to alpha, cancelling close, quitting/reopening, saving beta through Save and Close, and discarding alpha were exercised. Disk checks confirmed beta was saved, alpha stayed unchanged and alpha's discarded draft existed in a checkpoint. The owner's working app was not restarted.
+
+Undo stacks and cursor/scroll positions are not persisted per tab. Switching constructs a separate editor view so undo cannot insert another file's buffer. Draft persistence uses the existing half-second session debounce and normal-quit save; abrupt termination before that save is not a zero-loss guarantee. Project content search and readable diffs are next; full LSP/Git/interactive terminal and long-session measurements remain open.
+
+![Native editor tabs with synthetic drafts](docs/editor-tabs.jpg)
+
+Public default verification for this editor slice: 104 tests, 96 passed, eight opt-in or private-sibling integration skips, zero failures. The private development run had 97 passes/seven skips because its sibling-monitor integration was available. No new model inference was needed to test editor persistence.

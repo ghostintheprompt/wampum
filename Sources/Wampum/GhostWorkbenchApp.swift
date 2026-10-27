@@ -17,7 +17,6 @@ private let acid=Color(red:0.76,green:0.83,blue:0.57)
 struct WorkbenchView: View {
     @ObservedObject var model: WorkbenchModel
     @State private var query=""
-    @State private var selectedFile: String?
     @State private var detail="Qwen"
     @State private var surface=ProcessInfo.processInfo.environment["WAMPUM_START_SURFACE"] == "Integrity" ? "Integrity":"Editor"
     var body: some View {
@@ -29,15 +28,16 @@ struct WorkbenchView: View {
                     Text("EXPLORER").font(.system(size:11,weight:.bold,design:.monospaced)).foregroundStyle(acid)
                     Text(model.session.project.isEmpty ? "No project selected" : URL(fileURLWithPath:model.session.project).lastPathComponent).font(.headline)
                     TextField("Filter files",text:$query).textFieldStyle(.roundedBorder)
-                    List(model.files.filter{query.isEmpty || $0.localizedCaseInsensitiveContains(query)},id:\.self,selection:$selectedFile){file in Text(file).font(.system(size:11,design:.monospaced)).lineLimit(2).tag(file)}.listStyle(.plain).onChange(of:selectedFile){_,file in if let file{model.openFile(file)}}
+                    List(model.files.filter{query.isEmpty || $0.localizedCaseInsensitiveContains(query)},id:\.self,selection:Binding<String?>(get:{model.session.file.isEmpty ? nil:model.session.file},set:{if let path=$0{model.openFile(path)}})){file in Text(file).font(.system(size:11,design:.monospaced)).lineLimit(2).tag(file)}.listStyle(.plain)
                     HStack{Button("New Case",action:model.newFile);Button("Refresh",action:model.refreshFiles)}
                     Text("First 2,000 nonhidden files. Binary files stay out of the editor.").font(.caption2).foregroundStyle(.secondary)
                 }.padding(12).frame(minWidth:190,idealWidth:230,maxWidth:320).background(panel)
                 VSplitView {
                     Group { if surface=="Browser" {BrowserPanel(model:model)} else {VStack(spacing:0){
+                        EditorTabStrip(model:model)
                         HStack{Text(model.session.file.isEmpty ? "EDITOR" : model.session.file).font(.system(size:12,design:.monospaced));if model.dirty {Text("DRAFT").font(.caption2).foregroundStyle(acid)};Spacer();Button("Save",action:model.saveFile).disabled(model.session.file.isEmpty)}.padding(10).background(panel)
                         if model.session.file.isEmpty {VStack(alignment:.leading,spacing:18){Text("A place to build.\nA record of what held up.").font(.system(size:32,weight:.semibold));Text("Open a project, choose a file, and bring Qwen the context it actually needs.").foregroundStyle(.secondary);Button("Open a project…",action:model.chooseProject)}.frame(maxWidth:.infinity,maxHeight:.infinity).padding(36)}
-                        else {CodeEditor(text:$model.session.draft)}
+                        else {CodeEditor(text:$model.session.draft).id(model.session.project+":"+model.session.file)}
                     }}}.frame(minHeight:270)
                     VStack(alignment:.leading,spacing:8){
                         HStack{Text("CHECK RUNNER / GUARDED").font(.system(size:11,weight:.bold,design:.monospaced)).foregroundStyle(acid);Spacer();if model.running{Button("Stop",action:model.stopCheck)};Button("Attach Output to Prompt",action:model.attachOutput)}
@@ -109,12 +109,48 @@ struct WorkbenchView: View {
         .onChange(of:detail){_,value in if value=="Network"{model.refreshNetwork()}}
         .confirmationDialog("Allow external network for this command?",isPresented:$model.showNetworkConfirmation,titleVisibility:.visible){Button("Allow for This Run",action:model.allowExternalRun);Button("Cancel",role:.cancel,action:model.cancelExternalRun)}message:{Text("This command and its children may contact any destination and transmit data accessible to your macOS account. The grant applies only to this run. Wampum cannot inspect every connection.\n\n"+model.pendingNetworkCommand)}
         .onChange(of:model.session.model){_,_ in Task{await model.inspectModel()}}
+        .confirmationDialog("Close unsaved draft?",isPresented:Binding(get:{model.pendingCloseTab != nil},set:{if !$0{model.pendingCloseTab=nil}}),titleVisibility:.visible){
+            if let path=model.pendingCloseTab {
+                Button("Save and Close"){model.saveAndCloseTab(path)}
+                Button("Discard Draft",role:.destructive){model.closeEditorTab(path,discardChanges:true)}
+            }
+            Button("Cancel",role:.cancel){model.pendingCloseTab=nil}
+        }message:{Text("Save or discard \(model.pendingCloseTab ?? "this file"). Discard keeps a recovery checkpoint and does not change the project file.")}
         .alert("Workbench",isPresented:Binding(get:{model.error != nil},set:{if !$0{model.error=nil}})){Button("OK"){model.error=nil}}message:{Text(model.error ?? "")}
         .sheet(isPresented:$model.showRequestReview){VStack(alignment:.leading,spacing:12){Text("Review the exact model request").font(.title2);Text("Destination: local Ollama / Model: \(model.pendingModel) / \(model.maskingCount) masking replacements").font(.caption);Text("Original transcript remains local. This frozen preview is what will be sent. Pattern matching cannot find every sensitive value. Image pixels are not redacted by text masking.").font(.caption);HStack{ForEach(model.pendingImages,id:\.self){encoded in if let data=Data(base64Encoded:encoded),let image=NSImage(data:data){Image(nsImage:image).resizable().scaledToFit().frame(width:200,height:120)}}};ScrollView{Text(model.requestPreview).font(.system(size:12,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)};HStack{Button("Cancel",action:model.cancelRequestReview);Spacer();Button("Send Reviewed Request",action:model.sendReviewedRequest).buttonStyle(.borderedProminent)}}.padding(22).frame(width:850,height:650)}
         .sheet(isPresented:$model.showProbeReview){VStack(alignment:.leading,spacing:14){Text("Approve one external request").font(.title2);if let request=model.pendingProbe{Text("HEAD \(request.url.absoluteString)").textSelection(.enabled);Text("Via \(request.proxy.description)");Text("\(model.probeMaskCount) masking replacements. This URL, including its query, is the exact transmitted value. The proxy can observe the destination; this is not an anonymity guarantee.");Text("No project files, cookies, authentication headers, or response body. Redirects refused. Failure ends the request; no direct fallback.")};HStack{Button("Cancel",action:model.cancelProxyProbe);Spacer();Button("Allow This Proxy Request",action:model.approveProxyProbe).buttonStyle(.borderedProminent)}}.padding(24).frame(width:700)}
         .sheet(isPresented:$model.showProposal){VStack(alignment:.leading,spacing:12){Text("Review replacement for \(model.session.file)").font(.headline);Text("This stages the proposed contents. It does not write to disk until you Save. Existing draft is checkpointed.").font(.caption);HSplitView{VStack{Text("CURRENT DRAFT");ScrollView{Text(model.session.draft).font(.system(size:11,design:.monospaced)).textSelection(.enabled)}};VStack{Text("PROPOSED");TextEditor(text:$model.proposal).font(.system(size:11,design:.monospaced))}};HStack{Button("Cancel"){model.showProposal=false};Spacer();Button("Stage in Editor",action:model.applyProposal).disabled(model.session.file.isEmpty)}}.padding(20).frame(width:1000,height:650)}
     }
 }
+struct EditorTabStrip: View {
+    @ObservedObject var model: WorkbenchModel
+    var body: some View {
+        if !model.editorDocuments.isEmpty {
+            ScrollViewReader { proxy in
+                ScrollView(.horizontal) {
+                    HStack(spacing: 3) {
+                        ForEach(model.editorDocuments) { document in
+                            HStack(spacing: 8) {
+                                Button { model.openFile(document.path) } label: {
+                                    HStack(spacing: 6) {
+                                        if document.dirty { Circle().fill(acid).frame(width: 6, height: 6).accessibilityLabel("Unsaved changes") }
+                                        Text(URL(fileURLWithPath: document.path).lastPathComponent).lineLimit(1)
+                                    }
+                                }.buttonStyle(.plain).accessibilityLabel("Open " + document.path)
+                                Button { model.requestCloseTab(document.path) } label: { Image(systemName: "xmark").font(.system(size: 9)) }
+                                    .buttonStyle(.plain).accessibilityLabel("Close " + document.path)
+                            }.font(.system(size: 11, design: .monospaced)).padding(.horizontal, 10).padding(.vertical, 9)
+                                .background(model.session.file == document.path ? carbon : panel)
+                                .overlay(alignment: .bottom) { if model.session.file == document.path { Rectangle().fill(acid).frame(height: 2) } }
+                                .help(document.path).id(document.path)
+                        }
+                    }
+                }.onChange(of: model.session.file) { _, path in proxy.scrollTo(path, anchor: .center) }
+            }.frame(height: 36).background(panel)
+        }
+    }
+}
+
 struct CodeEditor: NSViewRepresentable {
     @Binding var text: String
     func makeCoordinator()->Coordinator{Coordinator(self)}

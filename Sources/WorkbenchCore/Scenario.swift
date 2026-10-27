@@ -64,7 +64,7 @@ public struct ScenarioStore {
     public func save(_ session:Session) throws {
         guard let lab=session.lab else {throw WorkbenchError.invalid("No active scenario.")}
         try validate(lab.id)
-        try write(try JSONEncoder().encode(session),to:directory.appendingPathComponent(lab.id+".json"))
+        try write(try JSONEncoder().encode(session.persistableEditorSession),to:directory.appendingPathComponent(lab.id+".json"))
     }
     public func load(_ id:String) throws -> Session? {
         try validate(id);let url=directory.appendingPathComponent(id+".json")
@@ -73,7 +73,7 @@ public struct ScenarioStore {
         guard session.lab?.id==id else{throw WorkbenchError.invalid("Saved scenario ID does not match its filename.")}
         return session
     }
-    public func saveGeneral(_ session:Session) throws {try write(try JSONEncoder().encode(session),to:directory.appendingPathComponent("general.json"))}
+    public func saveGeneral(_ session:Session) throws {try write(try JSONEncoder().encode(session.persistableEditorSession),to:directory.appendingPathComponent("general.json"))}
     public func loadGeneral() throws -> Session? {
         let url=directory.appendingPathComponent("general.json")
         return FileManager.default.fileExists(atPath:url.path) ? try JSONDecoder().decode(Session.self,from:Data(contentsOf:url)) : nil
