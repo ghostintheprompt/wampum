@@ -126,7 +126,7 @@ import WorkbenchCore
         status="Closing Wampum's isolated browser…";record("Disconnect requested")
         Task{
             _ = try? await connection.request("tools/call",params:.object(["name":.string("browser_close"),"arguments":.object([:])]),timeout:3)
-            await connection.stop();disconnecting=false;status="Disconnected. Wampum's isolated browser was stopped.";record("Disconnected")
+            let stopped=await connection.stop();disconnecting=false;status=stopped ? "Disconnected. Owned MCP transport stopped." : "Disconnected; transport cleanup is still pending. Inspect diagnostics.";record(stopped ? "Disconnected / transport stopped" : "Disconnected / cleanup pending")
         }
     }
     func validate(_ call:BrowserCall)throws {

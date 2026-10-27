@@ -1,4 +1,5 @@
 import XCTest
+import Darwin
 import AppKit
 @testable import Wampum
 @testable import WorkbenchCore
@@ -34,6 +35,39 @@ final class BrowserAppTests:XCTestCase {
         XCTAssertThrowsError(try b.validate(BrowserCall(name:"browser_run_code_unsafe",arguments:.object([:]))))
         let call=BrowserCall(name:"browser_navigate",arguments:.object(["url":.string("http://127.0.0.1:8000")]))
         XCTAssertNoThrow(try b.validate(call));b.proposed=call;b.denyProposal(model:m);XCTAssertThrowsError(try b.validate(call));XCTAssertTrue(b.events.contains{$0.contains("REJECTED")})
+    }
+    @MainActor func testLiveBrowserTransportDescendantCleanup() async throws {
+        guard ProcessInfo.processInfo.environment["WAMPUM_BROWSER_LIVE"] == "1" else {
+            throw XCTSkip("Opt-in owned isolated Chrome cleanup test; no model call.")
+        }
+        let (root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
+        let browser=m.browser;browser.livePreview=false;browser.requestConnect(scenario:nil)
+        for _ in 0..<800 {if !browser.busy{break};try await Task.sleep(nanoseconds:50_000_000)}
+        guard browser.connected else {throw WorkbenchError.invalid(browser.diagnostics)}
+        let connection=browser.connection
+        let result=try await connection.request("wampum/self-check")
+        let url=try XCTUnwrap(result["url"]?.string)
+        _ = try await connection.call(BrowserCall(name:"browser_navigate",arguments:.object(["url":.string(url)])))
+        let identifier=await connection.ownedProcessIdentifier()
+        let leader=try XCTUnwrap(identifier)
+        let process=Process();process.executableURL=URL(fileURLWithPath:"/bin/ps");process.arguments=["-axo","pid=,ppid="]
+        let pipe=Pipe();process.standardOutput=pipe;try process.run()
+        let table=String(decoding:pipe.fileHandleForReading.readDataToEndOfFile(),as:UTF8.self);process.waitUntilExit()
+        XCTAssertEqual(process.terminationStatus,0)
+        let rows=table.split(separator:"\n").compactMap {line -> (Int32,Int32)? in
+            let fields=line.split(whereSeparator:{$0.isWhitespace})
+            guard fields.count==2,let pid=Int32(fields[0]),let parent=Int32(fields[1]) else{return nil}
+            return(pid,parent)
+        }
+        var owned:Set<Int32>=[leader]
+        while true {let previous=owned;for(pid,parent)in rows where owned.contains(parent){owned.insert(pid)};if previous==owned{break}}
+        XCTAssertGreaterThan(owned.count,1,"Expected actual Chrome descendants")
+        // Only exact descendants observed under the test-owned transport are cleanup candidates.
+        defer{for pid in owned{_ = Darwin.kill(pid,SIGKILL)}}
+        let stopped=await connection.stop();XCTAssertTrue(stopped)
+        for _ in 0..<100 {if owned.allSatisfy({Darwin.kill($0,0) == -1}){break};try await Task.sleep(nanoseconds:20_000_000)}
+        for pid in owned {XCTAssertEqual(Darwin.kill(pid,0),-1,"Owned browser descendant survived: \(pid)")}
+        print("LIVE MCP CLEANUP: \(owned.count) observed transport/browser processes exited; no model call")
     }
     @MainActor func testLivePlaywrightPageCaptureAndQwenClick()async throws {
         guard ProcessInfo.processInfo.environment["WAMPUM_BROWSER_LIVE"] == "1" else{throw XCTSkip("Opt-in isolated Chrome / local Qwen fixture test.")}

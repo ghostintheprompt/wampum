@@ -2,7 +2,7 @@
 
 ![Wampum artwork: Rockaway marshes, wampum, and jets over Kennedy Airport](Resources/WampumIcon.png)
 
-**Early source prototype · v0.1.1.** [Source and releases](https://github.com/ghostintheprompt/wampum). Built and tested for a personal red-team workflow on an M4 Mac mini with 16 GB. [Release verification](RELEASE_EVIDENCE.md). [Native release check](docs/release-editor.png).
+**Early source prototype · v0.1.1 plus October 27 source updates.** [Source and releases](https://github.com/ghostintheprompt/wampum). Built and tested for a personal red-team workflow on an M4 Mac mini with 16 GB. [Release verification](RELEASE_EVIDENCE.md). [Native release check](docs/release-editor.png).
 
 A native macOS workbench for local security research and prototype development. Built for a Mac mini M4 with 16 GB unified memory. A companion to Avant Garde, for Ghost's research workflow.
 
@@ -121,7 +121,7 @@ Each sent browser action now has a receipt with independent tool execution, page
 
 Intent is saved before calling the tool. On restart, an interrupted in-flight request becomes unknown and cannot be repeated until the operator inspects conditions and explicitly acknowledges them through the reset control. A previously saved tool success stays successful even if observation collection was interrupted. Nothing is automatically replayed. Stale DOM observations are not used for new Qwen proposals or shared as fresh controller observations.
 
-Recent receipts live under Application Support/Wampum/browser-receipts/<scenario>/recent.json (last 100), with private-mode capture files and SHA-256 references. Receipt metadata stores a hash of canonical tool arguments rather than their raw form values; existing browser activity logs still contain action arguments. Hashes support checking the saved bytes, not an immutable or independently signed forensic chain. Storage errors block new actions and preserve unreadable history for repair. Owned command-group termination and warmed local-Qwen request cancellation/recovery are now tested separately. Browser/MCP descendant cleanup and detached processes remain open.
+Recent receipts live under Application Support/Wampum/browser-receipts/<scenario>/recent.json (last 100), with private-mode capture files and SHA-256 references. Receipt metadata stores a hash of canonical tool arguments rather than their raw form values; existing browser activity logs still contain action arguments. Hashes support checking the saved bytes, not an immutable or independently signed forensic chain. Storage errors block new actions and preserve unreadable history for repair. Owned command-group termination and warmed local-Qwen request cancellation/recovery are now tested separately. Owned browser/MCP group cleanup is now tested; deliberate detachment and broader containment remain open.
 
 
 ## Build record: one machine, one workflow
@@ -193,7 +193,7 @@ The monitor accepts an approval link only when its call hash, independently decl
 
 The public snapshot excludes private handoff notes/history, machine-specific client configurations, case material and runtime state. Development checkpoint IDs above refer to the original local development history; this public repository starts from a reviewed source snapshot. The public build record preserves the decisions and failures without publishing private work. The app has no account, but an opted-in external controller can use its own provider account and external tools can transmit data.
 
-Still open: browser/MCP descendant cleanup, detached process containment, full native long-session testing, cold-cancellation/queue cases, streaming responses, tabs/search/diffs/LSP/Git/interactive terminal, independent baseline anchoring and stronger context provenance. Build the next layer when its workflow is needed and testable. A prototype release does not turn those into shipped features.
+Still open: detached/reparented browser process containment, full native long-session testing, cold-cancellation/queue cases, streaming responses, tabs/search/diffs/LSP/Git/interactive terminal, independent baseline anchoring and stronger context provenance. Build the next layer when its workflow is needed and testable. A prototype release does not turn those into shipped features.
 
 
 ## Browser prerequisites
@@ -214,3 +214,13 @@ Source release only: no notarized installer, automatic updater or bundled model/
 ### Native release QA correction
 
 The first public source cut passed its fixture/service checks, then native QA from a temporary checkout exposed inconsistent `/tmp` and `/private/tmp` path aliases. The explorer trimmed incorrect relative names, and resolution needed the same canonical form on both sides. Version 0.1.1 canonicalizes enumeration and resolution, with two regression tests covering alias roots, Unicode project names and safe saves. Native QA then opened a listed source file, discovered the actual installed model, reviewed the exact request and saved a real READY response (185 prompt tokens,2 output tokens). This correction is retained in the build record.
+
+## Browser transport shutdown — October 27, 2026
+
+MCP now launches in an owned process group. Disconnect closes its pipes, signals the group, allows up to three seconds for graceful shutdown and then escalates to KILL if needed. Natural server exit also cleans remaining group members before reaping its leader. Disconnect waits for tracked shutdowns; repeated calls cannot report completion while an earlier cleanup remains pending. Cancelled callers still wait, and a pending request fails without an automatic retry. Pipe readers own duplicate descriptors and cancellable polling, preventing an old reader from consuming a replacement connection's data.
+
+Two real-process regressions cover TERM-ignoring children/grandchildren, cancelled/repeated Stop, an unaffected unrelated process, replacement connections and natural server exit with inherited pipes. A separate opt-in test opened the installed Playwright adapter and an isolated Chrome instance against an owned loopback fixture: all eight observed transport/browser descendants exited. It made no model call. Native Browser Check and Disconnect were also exercised in a separately identified app with temporary state; the displayed result was `Disconnected. Owned MCP transport stopped.`
+
+This owns the spawned group, not every possible descendant. Deliberate setsid/setpgid escape, reparented helpers outside the observed tree, force quit/power loss and complete OS-level containment remain open. The existing browser profile, network approvals and no-cloud-fallback policy are unchanged.
+
+Repeat the regression with `swift test --filter MCPProcessTests`. The actual browser check is `WAMPUM_BROWSER_LIVE=1 swift test --filter BrowserAppTests.testLiveBrowserTransportDescendantCleanup`; it requires the existing Node/Playwright/Chrome setup and installs nothing.

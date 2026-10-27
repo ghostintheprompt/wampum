@@ -41,7 +41,8 @@ public struct BrowserRetryGate: Codable {
     }
 }
 public actor MCPConnection {
-    private var process:Process?
+    private var process:OwnedMCPProcess?
+    private var stoppingProcesses:[OwnedMCPProcess]=[]
     private var ownedSocketDirectory:URL?
     private var input:FileHandle?
     private var output:FileHandle?
@@ -59,65 +60,110 @@ public actor MCPConnection {
         return "(version 1)(allow default)(deny network-outbound)(allow network-outbound (remote ip \"localhost:*\"))(allow network-outbound (subpath \""+path+"\"))"
     }
     public func start(executable:URL,arguments:[String],directory:URL,localOnly:Bool) async throws {
-        stop();errors="";let p=Process();let stdin=Pipe();let stdout=Pipe();let err=Pipe()
+        guard await stop() else { throw WorkbenchError.invalid("Previous MCP transport is still stopping.") };errors="";let stdin=Pipe();let stdout=Pipe();let err=Pipe()
         // Keep Playwright IPC in an owned short path: Unix socket paths have a small length limit.
         let socketDirectory=URL(fileURLWithPath:"/private/tmp").appendingPathComponent("wmp-"+String(UUID().uuidString.prefix(8)))
         try FileManager.default.createDirectory(at:socketDirectory,withIntermediateDirectories:false,attributes:[.posixPermissions:0o700])
         ownedSocketDirectory=socketDirectory
-        var environment=ProcessInfo.processInfo.environment;environment["TMPDIR"]=socketDirectory.path;environment["TMP"]=socketDirectory.path;environment["TEMP"]=socketDirectory.path;p.environment=environment
-        if localOnly {p.executableURL=URL(fileURLWithPath:"/usr/bin/sandbox-exec");p.arguments=["-p",Self.localBrowserProfile(socketDirectory:socketDirectory),executable.path]+arguments}
-        else {p.executableURL=executable;p.arguments=arguments}
-        p.currentDirectoryURL=directory;p.standardInput=stdin;p.standardOutput=stdout;p.standardError=err
-        input=stdin.fileHandleForWriting;output=stdout.fileHandleForReading;stderr=err.fileHandleForReading;process=p
+        var environment=ProcessInfo.processInfo.environment;environment["TMPDIR"]=socketDirectory.path;environment["TMP"]=socketDirectory.path;environment["TEMP"]=socketDirectory.path
+        let commandExecutable = localOnly ? URL(fileURLWithPath:"/usr/bin/sandbox-exec") : executable
+        let commandArguments = localOnly ? ["-p",Self.localBrowserProfile(socketDirectory:socketDirectory),executable.path]+arguments : arguments
+        input=stdin.fileHandleForWriting;output=stdout.fileHandleForReading;stderr=err.fileHandleForReading
         let outputHandle=stdout.fileHandleForReading;let errorHandle=err.fileHandleForReading;let readerGeneration=generation
         // A single ordered reader preserves JSON lines across large screenshot chunks.
         readerTask=Task { [weak self] in
+            guard !Task.isCancelled else{return}
             for await data in Self.byteStream(outputHandle) {await self?.receive(data,generation:readerGeneration)}
             await self?.receive(Data(),generation:readerGeneration)
         }
         errorReaderTask=Task { [weak self] in
+            guard !Task.isCancelled else{return}
             for await data in Self.byteStream(errorHandle) {await self?.receiveError(data,generation:readerGeneration)}
         }
         do {
-            try p.run()
+            process = try OwnedMCPProcess(executable:commandExecutable,arguments:commandArguments,environment:environment,directory:directory,
+                                          stdin:stdin.fileHandleForReading,stdout:stdout.fileHandleForWriting,stderr:err.fileHandleForWriting)
+            try? stdin.fileHandleForReading.close()
+            try? stdout.fileHandleForWriting.close()
+            try? err.fileHandleForWriting.close()
             _ = try await request("initialize",params:.object(["protocolVersion":.string("2024-11-05"),"capabilities":.object([:]),"clientInfo":.object(["name":.string("Wampum"),"version":.string("0.1.0")])]))
             try write(.object(["jsonrpc":.string("2.0"),"method":.string("notifications/initialized")]))
-        } catch {let detail=errors;stop();throw WorkbenchError.invalid("Playwright MCP connection failed: \(error.localizedDescription)\n\(detail)")}
+        } catch {let detail=errors;if generation == readerGeneration {await stop()};throw WorkbenchError.invalid("Playwright MCP connection failed: \(error.localizedDescription)\n\(detail)")}
+    }
+    private final class ReaderCancellation: @unchecked Sendable {
+        private let lock=NSLock()
+        private var value=false
+        func cancel(){lock.lock();value=true;lock.unlock()}
+        var cancelled:Bool{lock.lock();defer{lock.unlock()};return value}
     }
     private nonisolated static func byteStream(_ handle:FileHandle)->AsyncStream<Data> {
-        let descriptor=handle.fileDescriptor
+        // The reader owns a duplicate. Closing a previous transport cannot make it
+        // read a recycled descriptor belonging to a newly connected transport.
+        let descriptor=dup(handle.fileDescriptor)
         return AsyncStream(bufferingPolicy:.bufferingOldest(128)) {continuation in
+            guard descriptor >= 0 else {continuation.finish();return}
+            let cancellation=ReaderCancellation()
+            continuation.onTermination={_ in cancellation.cancel()}
             DispatchQueue(label:"Wampum.MCP.reader."+UUID().uuidString,qos:.userInitiated).async {
+                defer{Darwin.close(descriptor);continuation.finish()}
                 var bytes=[UInt8](repeating:0,count:65536)
-                while true {
+                while !cancellation.cancelled {
+                    var descriptorState=pollfd(fd:descriptor,events:Int16(POLLIN | POLLHUP),revents:0)
+                    let ready=Darwin.poll(&descriptorState,1,100)
+                    if ready<0 && errno==EINTR {continue}
+                    if ready<0 {return}
+                    if ready==0 {continue}
                     let count=Darwin.read(descriptor,&bytes,bytes.count)
                     if count<0 && errno==EINTR {continue}
-                    if count<=0 {continuation.finish();return}
-                    if case .dropped=continuation.yield(Data(bytes.prefix(count))) {continuation.finish();return}
+                    if count<=0 {return}
+                    switch continuation.yield(Data(bytes.prefix(count))) {
+                    case .dropped, .terminated:return
+                    case .enqueued:break
+                    @unknown default:return
+                    }
                 }
             }
         }
     }
-    public func stop(){
+    @discardableResult
+    public func stop() async -> Bool {
+        _ = stopNow()
+        for _ in 0..<250 {
+            stoppingProcesses.removeAll{!$0.isRunning}
+            if stoppingProcesses.isEmpty {return true}
+            // Cleanup must finish even when the caller's task has been cancelled.
+            await withCheckedContinuation { continuation in
+                DispatchQueue.global(qos:.utility).asyncAfter(deadline:.now()+0.02){continuation.resume()}
+            }
+        }
+        stoppingProcesses.removeAll{!$0.isRunning}
+        return stoppingProcesses.isEmpty
+    }
+    private func stopNow()->OwnedMCPProcess? {
         generation += 1
         readerTask?.cancel();errorReaderTask?.cancel();readerTask=nil;errorReaderTask=nil
         try? input?.close();try? output?.close();try? stderr?.close()
         let stoppedProcess=process;let socketDirectory=ownedSocketDirectory;ownedSocketDirectory=nil
-        if let stoppedProcess,stoppedProcess.isRunning{stoppedProcess.terminate()}
+        if let stoppedProcess,stoppedProcess.isRunning{
+            stoppingProcesses.append(stoppedProcess)
+            stoppedProcess.terminate()
+        }
         Task.detached {
-            for _ in 0..<150 {if stoppedProcess?.isRunning != true{break};try? await Task.sleep(nanoseconds:20_000_000)}
+            for _ in 0..<250 {if stoppedProcess?.isRunning != true{break};try? await Task.sleep(nanoseconds:20_000_000)}
             if stoppedProcess?.isRunning != true,let socketDirectory{try? FileManager.default.removeItem(at:socketDirectory)}
         }
         process=nil;input=nil;output=nil;stderr=nil;buffer=Data()
         let abandoned=pending;pending=[:];for waiter in abandoned.values{waiter.resume(throwing:WorkbenchError.invalid("MCP disconnected."))}
+        return stoppedProcess
     }
+    public func ownedProcessIdentifier()->Int32? {process?.identifier}
     public func diagnostics()->String{errors}
     private func receiveError(_ data:Data,generation:Int?=nil){if let generation,generation != self.generation{return};if !data.isEmpty{errors=String((errors+String(decoding:data,as:UTF8.self)).suffix(16000))}}
     private func receive(_ data:Data,generation:Int){
         guard generation==self.generation else{return}
         if data.isEmpty {let abandoned=pending;pending=[:];for waiter in abandoned.values{waiter.resume(throwing:WorkbenchError.invalid("MCP server closed its output. "+errors))};return}
         buffer.append(data)
-        guard buffer.count<=24_000_000 else{stop();return}
+        guard buffer.count<=24_000_000 else{_ = stopNow();return}
         while let newline=buffer.firstIndex(of:10){let line=buffer.prefix(upTo:newline);buffer.removeSubrange(...newline)
             guard let value=try? JSONDecoder().decode(JSONValue.self,from:line) else{receiveError(line);continue}
             if case .number(let n)?=value["id"],let waiter=pending.removeValue(forKey:Int(n)) {

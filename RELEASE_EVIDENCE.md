@@ -35,3 +35,15 @@ Installed services are opt-in. Tests never install a model. Browser dependencies
 Native launch after the initial 0.1.0 source cut exposed inconsistent macOS temporary-path aliases. Version 0.1.1 canonicalizes enumerated and resolved paths before relative-path handling. Two new tests pass for `/tmp`/`/private/tmp` roots, Unicode names, readable file listings and safe saves. All default and local-service checks above were rerun against the patched snapshot.
 
 The rebuilt native app then displayed correct relative names, opened a source file through the explorer, discovered Qwen, showed its actual capabilities, presented the frozen request review, and saved the real local READY response. Prompt 185 / output 2 were observed in the app. Screenshot: docs/release-editor.png. Only temporary release state and public source were used; the original work session stayed open.
+
+## Browser transport shutdown — October 27, 2026
+
+MCP now launches in an owned process group. Disconnect closes its pipes, signals the group, allows up to three seconds for graceful shutdown and then escalates to KILL if needed. Natural server exit also cleans remaining group members before reaping its leader. Disconnect waits for tracked shutdowns; repeated calls cannot report completion while an earlier cleanup remains pending. Cancelled callers still wait, and a pending request fails without an automatic retry. Pipe readers own duplicate descriptors and cancellable polling, preventing an old reader from consuming a replacement connection's data.
+
+Two real-process regressions cover TERM-ignoring children/grandchildren, cancelled/repeated Stop, an unaffected unrelated process, replacement connections and natural server exit with inherited pipes. A separate opt-in test opened the installed Playwright adapter and an isolated Chrome instance against an owned loopback fixture: all eight observed transport/browser descendants exited. It made no model call. Native Browser Check and Disconnect were also exercised in a separately identified app with temporary state; the displayed result was `Disconnected. Owned MCP transport stopped.`
+
+This owns the spawned group, not every possible descendant. Deliberate setsid/setpgid escape, reparented helpers outside the observed tree, force quit/power loss and complete OS-level containment remain open. The existing browser profile, network approvals and no-cloud-fallback policy are unchanged.
+
+Repeat the regression with `swift test --filter MCPProcessTests`. The actual browser check is `WAMPUM_BROWSER_LIVE=1 swift test --filter BrowserAppTests.testLiveBrowserTransportDescendantCleanup`; it requires the existing Node/Playwright/Chrome setup and installs nothing.
+
+Fresh-source default run:96total,88passed,8skipped,0failures. The additional local browser cleanup test passed separately. Native review used the signed locally rebuilt source-equivalent app and isolated state. [Native Disconnect result](docs/cleanup-review.png). No notarized installer or new release tag accompanies this main-branch source update.
