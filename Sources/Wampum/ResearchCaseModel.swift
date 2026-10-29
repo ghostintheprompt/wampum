@@ -46,7 +46,7 @@ extension WorkbenchModel {
                 throw WorkbenchError.invalid("Source already captured. Changed sources require an explicitly revised case.")
             }
             let alert = NSAlert(); alert.messageText = "Capture \(url.lastPathComponent)?"
-            alert.informativeText = "Format: \(capture.format.rawValue)\nSHA256: \(identity.sha256)\n\(capture.warnings.joined(separator: "\n"))\nOnly the first bounded text window accompanies ordinary chat. This does not establish complete document coverage."
+            alert.informativeText = "Format: \(capture.format.rawValue)\nSHA256: \(identity.sha256)\n\(capture.warnings.joined(separator: "\n"))\nUse Inspect Case Coverage to select exact windows for a required output unit. Until you do, chat uses a labeled first-window excerpt. This does not establish complete document coverage."
             alert.addButton(withTitle: "Capture"); alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
             state.sources.append(capture); _ = try state.requestContext()
@@ -70,13 +70,23 @@ extension WorkbenchModel {
         } catch { self.error = error.localizedDescription }
     }
     func inspectResearchCase() {
-        guard let state = session.researchCase else { return }
-        do {
-            _ = try state.requestContext()
-            let alert = NSAlert(); alert.messageText = "Case \(state.contract.id)"
-            alert.informativeText = "\(state.contract.objective)\n\nRequired units: \(state.contract.requiredUnits.joined(separator: ", "))\nCaptured sources: \(state.sources.count)\n\nOrdinary chat receives first-window excerpts only. Section coverage and quality release remain separate reviews."
-            alert.runModal()
-        } catch { self.error = error.localizedDescription }
+        guard session.researchCase != nil else { return }
+        showSourceCoverage = true
+    }
+    func applySourcePlan(_ plan: ResearchSourcePlan, unitID: String, expectedRevision: String) throws {
+        guard !busy, !running, !showRequestReview, !controller.enabled, !browser.busy,
+              var state = session.researchCase else {
+            throw WorkbenchError.invalid("Finish active requests or controller work before changing source selection.")
+        }
+        guard try state.sourceSelectionRevision() == expectedRevision else {
+            throw WorkbenchError.invalid("Case sources or selection changed while editing. Reopen coverage and review again.")
+        }
+        state.sourcePlan = plan; state.activeSourceUnit = unitID
+        _ = try state.requestContext()
+        try checkpointSession()
+        var target = session; target.researchCase = state
+        try saveEditorSession(target); session = target
+        status = "Exact source selection saved. Allocation is not proof of review or completion."
     }
     private func boundedResearchData(_ url: URL) throws -> Data {
         let pinned = try IntegrityCheck.hashFile(url.path, limit: 1_048_576)

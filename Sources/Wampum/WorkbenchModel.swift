@@ -29,6 +29,7 @@ import WorkbenchCore
     @Published var showNetworkConfirmation=false
     @Published var pendingNetworkCommand=""
     @Published var privacy=PrivacySettings()
+    @Published var showSourceCoverage=false
     @Published var showRequestReview=false
     @Published var requestPreview=""
     @Published var maskingCount=0

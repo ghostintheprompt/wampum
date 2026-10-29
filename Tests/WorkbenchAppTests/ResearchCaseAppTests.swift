@@ -102,3 +102,25 @@ extension ResearchCaseAppTests {
         XCTAssertEqual(reply?.stopReason, "stop")
     }
 }
+
+extension ResearchCaseAppTests {
+    @MainActor func testSourceSelectionPersistsAndRejectsConcurrentEdit() throws {
+        let (root, model) = try fixture(); defer { try? FileManager.default.removeItem(at: root) }
+        let original = try XCTUnwrap(model.session.researchCase)
+        let revision = try original.sourceSelectionRevision()
+        let plan = try ResearchSourcePlan(contract: original.contract)
+        try model.applySourcePlan(plan, unitID: "report", expectedRevision: revision)
+        XCTAssertEqual(try model.store.load().researchCase?.activeSourceUnit, "report")
+        XCTAssertThrowsError(try model.applySourcePlan(plan, unitID: "report", expectedRevision: revision))
+        let current = try XCTUnwrap(model.session.researchCase?.sourceSelectionRevision())
+        model.send(); XCTAssertTrue(model.showRequestReview)
+        XCTAssertThrowsError(try model.applySourcePlan(plan, unitID: "report", expectedRevision: current))
+        model.cancelRequestReview()
+        model.session.researchCase?.sourcePlan = nil; model.session.researchCase?.activeSourceUnit = nil
+        model.send(); XCTAssertTrue(model.showRequestReview)
+        model.session.researchCase?.sourcePlan = plan; model.session.researchCase?.activeSourceUnit = "report"
+        model.sendReviewedRequest()
+        XCTAssertFalse(model.busy); XCTAssertTrue(model.session.messages.isEmpty)
+        XCTAssertNotNil(model.error)
+    }
+}

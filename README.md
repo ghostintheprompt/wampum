@@ -244,6 +244,12 @@ Public default verification for this editor slice: 104 tests, 96 passed, eight o
 
 Adds case contracts, format-aware source capture, explicitly reviewed evidence memory, stale-request checks, research request/response journals, section-review records, a quality-record scorer and an opt-in isolated Python-function test runner. Case replacement checkpoints previous context before clearing it. New case controls are in the File menu.
 
-The development suite passed 186 tests with nine opt-in skips; a separate 37-test Python boundary suite passed. Narrow installed-model assisted-memory checks passed. These checks do not establish complete-document quality, production security or frontier-model equivalence. Native UI acceptance for the new case menus remains pending. Section generation/coverage and final quality-release integration are still incomplete.
+The development suite passed 192 tests with nine opt-in skips; a separate 37-test Python boundary suite passed. Narrow installed-model assisted-memory checks passed. These checks do not establish complete-document quality, production security or frontier-model equivalence. Native UI acceptance for the new case menus remains pending. Section generation/coverage and final quality-release integration are still incomplete.
 
 The isolated runner accepts reviewed, pinned stateless JSON functions; legacy shared-process modes remain labeled. Local review records are not authenticated execution proof. No model download, cloud fallback, account or telemetry dependency is introduced.
+
+### Exact source allocation
+
+File → Inspect Case Coverage now lets the operator allocate exact UTF-8 text windows to each required output unit, inspect original hashes and byte ranges, and see omitted windows and extraction warnings. Save the active unit before requesting its section. Selections persist with the case; changed source bytes, stale case bindings and oversized requests are rejected. Older sessions retain explicitly labeled first-window behavior until an exact selection is saved.
+
+Allocation and request inclusion do not prove model comprehension or substantive review. Native UI interaction testing for these controls remains pending; core and app-model tests cover selection, omissions, persistence and rejection paths. Whole-document assembly and quality-release integration remain incomplete.
