@@ -37,6 +37,9 @@ public struct ResearchCaseState: Codable, Sendable {
     public var sources: [ResearchSourceCapture]
     public var sourcePlan: ResearchSourcePlan?
     public var activeSourceUnit: String?
+    public var sectionDrafts: [String: String]?
+    public var sectionInstructions: [String: String]?
+    public var sectionWorkflow: ResearchSectionWorkflow?
     public var ledger: ResearchEvidence.Ledger
     public init(contract: ResearchCaseContract, sources: [ResearchSourceCapture] = [], ledger: ResearchEvidence.Ledger? = nil) throws {
         let hash = try contract.digest()

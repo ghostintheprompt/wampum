@@ -7,7 +7,10 @@ public enum SectionWorkflowError: Error { case invalid(String) }
 public struct SectionSource: Codable, Equatable, Sendable {
     public let id: String
     public let contentHash: String
-    public init(id: String, contentHash: String) { self.id = id; self.contentHash = contentHash }
+    public let sectionID: String?
+    public init(id: String, contentHash: String, sectionID: String? = nil) {
+        self.id = id; self.contentHash = contentHash; self.sectionID = sectionID
+    }
 }
 
 public struct SectionModelProvenance: Codable, Equatable, Sendable {
@@ -136,12 +139,12 @@ public struct ResearchSectionWorkflow: Codable, Sendable {
     public func validate() throws {
         guard Self.meaningful(caseID), Self.validHash(contractHash), !requiredSectionIDs.isEmpty,
               requiredSectionIDs.allSatisfy(Self.meaningful), Set(requiredSectionIDs).count == requiredSectionIDs.count,
-              Self.validSources(sources), Set(attempts.map(\.id)).count == attempts.count,
+              Self.validSources(sources), sources.allSatisfy({ $0.sectionID == nil || requiredSectionIDs.contains($0.sectionID!) }), Set(attempts.map(\.id)).count == attempts.count,
               Set(reviews.map(\.id)).count == reviews.count else { throw SectionWorkflowError.invalid("Invalid workflow identity or duplicate records") }
         for attempt in attempts {
             guard Self.meaningful(attempt.id), attempt.caseID == caseID, requiredSectionIDs.contains(attempt.sectionID),
                   Self.validHash(attempt.contractHash), attempt.bodyHash == Self.hash(Data(attempt.body.utf8)),
-                  Self.validSources(attempt.sources), Self.meaningful(attempt.provenance.model), Self.meaningful(attempt.provenance.requestID),
+                  Self.validSources(attempt.sources), attempt.sources.allSatisfy({ $0.sectionID == nil || $0.sectionID == attempt.sectionID }), Self.meaningful(attempt.provenance.model), Self.meaningful(attempt.provenance.requestID),
                   attempt.outputTokens.map({ $0 >= 0 }) ?? true, attempt.inputTokens.map({ $0 >= 0 }) ?? true else {
                 throw SectionWorkflowError.invalid("Invalid attempt")
             }
@@ -167,8 +170,13 @@ public struct ResearchSectionWorkflow: Codable, Sendable {
               attempts.last(where: { $0.sectionID == attempt.sectionID })?.id == attempt.id, isCurrent(attempt) else { throw SectionWorkflowError.invalid("Review requires current attempt") }
         var next = self; next.reviews.append(review); try next.validate(); self = next
     }
+    public func sources(for sectionID: String) throws -> [SectionSource] {
+        try validate()
+        guard requiredSectionIDs.contains(sectionID) else { throw SectionWorkflowError.invalid("Unknown required section") }
+        return sources.filter { $0.sectionID == nil || $0.sectionID == sectionID }
+    }
     private func isCurrent(_ attempt: SectionGenerationAttempt) -> Bool {
-        attempt.caseID == caseID && attempt.contractHash == contractHash && Set(attempt.sources) == Set(sources)
+        attempt.caseID == caseID && attempt.contractHash == contractHash && Set(attempt.sources) == Set(sources.filter { $0.sectionID == nil || $0.sectionID == attempt.sectionID })
     }
     public func state(for sectionID: String) throws -> SectionReviewState {
         try validate()

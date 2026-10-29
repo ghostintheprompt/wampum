@@ -14,6 +14,10 @@ public struct ResearchTurnJournal: Sendable {
             "assurance": "Logical reviewed request, not exact HTTP wire bytes. No automatic replay after interruption."]
         try write(JSONSerialization.data(withJSONObject: request, options: [.sortedKeys]), name: "request.json")
     }
+    public func recordSectionBinding(_ binding: ResearchSectionRequest) throws {
+        let encoder = JSONEncoder(); encoder.outputFormatting = [.sortedKeys]
+        try write(encoder.encode(binding), name: "section-request.json")
+    }
     public func recordRawResponse(_ data: Data) throws { try write(data, name: "response.json") }
     public func recordTerminal(_ state: String, detail: String) throws {
         guard ["responseSaved", "failedOrCancelled"].contains(state) else { throw WorkbenchError.invalid("Invalid research terminal state.") }

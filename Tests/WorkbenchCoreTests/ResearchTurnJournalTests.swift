@@ -17,4 +17,19 @@ final class ResearchTurnJournalTests: XCTestCase {
         XCTAssertThrowsError(try journal.recordTerminal("responseSaved", detail: "replacement"))
         XCTAssertThrowsError(try journal.recordTerminal("verified", detail: "unsupported claim"))
     }
+    func testFrozenSectionMetadataIsSavedWithoutOverwrite() throws {
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let contract = ResearchCaseContract(id: "journal-fixture", objective: "Review a synthetic case", roles: ["operator"], allowedActions: ["read"], requiredUnits: ["analysis"], rubricSHA256: String(repeating: "a", count: 64))
+        var state = try ResearchCaseState(contract: contract)
+        state.sourcePlan = try ResearchSourcePlan(contract: contract); state.activeSourceUnit = "analysis"
+        state.sectionInstructions = ["analysis": "Explain the evidence and its actual limitations."]
+        let binding = try ResearchSectionRequest(state: state)
+        let journal = try ResearchTurnJournal(root: root, messages: [], model: "fixture", context: 8192, thinking: false, supportsThinking: false, fingerprint: state.requestFingerprint())
+        try journal.recordSectionBinding(binding)
+        XCTAssertThrowsError(try journal.recordSectionBinding(binding))
+        let restored = try JSONDecoder().decode(ResearchSectionRequest.self, from: Data(contentsOf: journal.directory.appendingPathComponent("section-request.json")))
+        XCTAssertEqual(restored.unitID, "analysis"); XCTAssertEqual(restored.sources, binding.sources)
+    }
+
 }

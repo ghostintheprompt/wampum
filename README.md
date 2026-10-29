@@ -244,7 +244,7 @@ Public default verification for this editor slice: 104 tests, 96 passed, eight o
 
 Adds case contracts, format-aware source capture, explicitly reviewed evidence memory, stale-request checks, research request/response journals, section-review records, a quality-record scorer and an opt-in isolated Python-function test runner. Case replacement checkpoints previous context before clearing it. New case controls are in the File menu.
 
-The development suite passed 192 tests with nine opt-in skips; a separate 37-test Python boundary suite passed. Narrow installed-model assisted-memory checks passed. These checks do not establish complete-document quality, production security or frontier-model equivalence. Native UI acceptance for the new case menus remains pending. Section generation/coverage and final quality-release integration are still incomplete.
+The development suite passed 200 tests with nine opt-in skips; a separate 37-test Python boundary suite passed. Narrow installed-model assisted-memory checks passed. These checks do not establish complete-document quality, production security or frontier-model equivalence. Native UI acceptance for the new case menus remains pending. Section generation/coverage and final quality-release integration are still incomplete.
 
 The isolated runner accepts reviewed, pinned stateless JSON functions; legacy shared-process modes remain labeled. Local review records are not authenticated execution proof. No model download, cloud fallback, account or telemetry dependency is introduced.
 
@@ -253,3 +253,9 @@ The isolated runner accepts reviewed, pinned stateless JSON functions; legacy sh
 File → Inspect Case Coverage now lets the operator allocate exact UTF-8 text windows to each required output unit, inspect original hashes and byte ranges, and see omitted windows and extraction warnings. Save the active unit before requesting its section. Selections persist with the case; changed source bytes, stale case bindings and oversized requests are rejected. Older sessions retain explicitly labeled first-window behavior until an exact selection is saved.
 
 Allocation and request inclusion do not prove model comprehension or substantive review. Native UI interaction testing for these controls remains pending; core and app-model tests cover selection, omissions, persistence and rejection paths. Whole-document assembly and quality-release integration remain incomplete.
+
+### Section generation and operator review
+
+File → Sections and Reviews stages one required section for exact-request approval using its saved source allocation. Requirement drafts persist separately from generation requirements. Returned attempts preserve original text, stop reason, token counts and request-journal linkage. Repairs retain prior attempts. Truncated or stale attempts cannot be accepted. Unit-specific requirement/allocation changes stale that section; shared context and approved-memory changes affect all sections.
+
+Operator review requires attribution, findings and a hash-pinned local evidence file. All required sections must have current acceptance before draft assembly. Export rechecks evidence, refuses overwriting, reads back saved bytes and retains a draft save receipt. These are supplied local review records, not authenticated proof, automatic semantic checking or final quality release. The integrated path was exercised with host-authored fixtures and a synthetic local HTTP response, with no live-model inference in this phase. Native click-through and live complete-document acceptance remain pending.
