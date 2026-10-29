@@ -7,7 +7,40 @@ import WorkbenchCore
     var body: some Scene {
         WindowGroup { WorkbenchView(model:model).frame(minWidth:1100,minHeight:720).preferredColorScheme(.dark) }
         .commands {
-            CommandGroup(replacing:.newItem){Button("Open Project…",action:model.chooseProject).keyboardShortcut("o");Button("New Case File…",action:model.newFile).keyboardShortcut("n");Button("Save File",action:model.saveFile).keyboardShortcut("s");Button("Save Checkpoint",action:model.snapshot).keyboardShortcut("s",modifiers:[.command,.shift]);Button("Restore Checkpoint…",action:model.restoreCheckpoint)}
+            CommandGroup(replacing: .newItem) {
+                Button("Open Project…", action: model.chooseProject).keyboardShortcut("o")
+                Button("New File…", action: model.newFile).keyboardShortcut("n")
+                Divider()
+                Button("Save File", action: model.saveFile).keyboardShortcut("s")
+                    .disabled(model.session.file.isEmpty)
+                Menu("Export Markdown") {
+                    Button("Latest Reply…") {
+                        if let reply = model.session.messages.last(where: { $0.role == "assistant" }) {
+                            model.saveMarkdownResponse(reply.content)
+                        }
+                    }.disabled(model.busy || !model.session.messages.contains(where: { $0.role == "assistant" }))
+                    Button("All Replies…") { model.saveConversation(assistantOnly: true) }
+                        .disabled(model.busy || !model.session.messages.contains(where: { $0.role == "assistant" }))
+                    Button("Entire Chat…") { model.saveConversation() }
+                        .disabled(model.busy || model.session.messages.isEmpty)
+                }
+                Divider()
+                Button("Import Research Case Contract…", action: model.importResearchContract)
+                    .disabled(model.busy || model.showRequestReview)
+                Button("Capture Case Source…", action: model.captureCaseSource)
+                    .disabled(model.busy || model.showRequestReview || model.session.researchCase == nil)
+                Button("Review Case Memory…", action: model.importResearchLedger)
+                    .disabled(model.busy || model.showRequestReview || model.session.researchCase == nil)
+                Button("Inspect Case Coverage", action: model.inspectResearchCase)
+                    .disabled(model.session.researchCase == nil)
+                Button("Build Document from Sources…", action: model.prepareResearchDocument)
+                    .disabled(model.busy || model.running || model.showRequestReview)
+                Button("Review Document…", action: model.reviewDocumentCheck)
+                    .disabled(model.busy || model.running || model.session.documentJob == nil)
+                Divider()
+                Button("Save Checkpoint", action: model.snapshot).keyboardShortcut("s", modifiers: [.command, .shift])
+                Button("Restore Checkpoint…", action: model.restoreCheckpoint)
+            }
         }
     }
 }
@@ -18,6 +51,7 @@ struct WorkbenchView: View {
     @ObservedObject var model: WorkbenchModel
     @State private var query=""
     @State private var detail="Qwen"
+    @State private var documentReviewTab="Chapter"
     @State private var surface=ProcessInfo.processInfo.environment["WAMPUM_START_SURFACE"] == "Integrity" ? "Integrity":"Editor"
     var body: some View {
         VStack(spacing:0){
@@ -91,7 +125,21 @@ struct WorkbenchView: View {
                         Text(model.capabilities.isEmpty ? "Capabilities not loaded" : model.capabilities.joined(separator:" / ")).font(.caption2).foregroundStyle(.secondary)
                         HStack{Picker("Context",selection:$model.session.context){ForEach([4096,8192,16384,32768],id:\.self){Text("\($0/1024)K").tag($0)}};Toggle("Think",isOn:$model.thinking).disabled(!model.capabilities.contains("thinking"))}.font(.caption)
                         Text("8K starting profile. Larger contexts need measured memory headroom. No model downloads or global Ollama changes.").font(.caption2).foregroundStyle(.secondary)
-                        ScrollViewReader{proxy in ScrollView{LazyVStack(alignment:.leading,spacing:16){ForEach(model.session.messages){message in VStack(alignment:.leading,spacing:7){Text(message.role.uppercased()).font(.system(size:10,weight:.bold,design:.monospaced)).foregroundStyle(acid);Text(message.content).font(.system(size:13)).textSelection(.enabled);if let paths=message.imagePaths,!paths.isEmpty {Text("\(paths.count) image attachment(s) saved locally. Not resent automatically.").font(.caption2).foregroundStyle(.secondary)};if message.role=="assistant" && message.content.contains("```"){Button("Review File Proposal"){model.stageProposal(message.content)}}}.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(panel).clipShape(RoundedRectangle(cornerRadius:8)).id(message.id)}}}.onChange(of:model.session.messages.count){_,_ in if let id=model.session.messages.last?.id{proxy.scrollTo(id,anchor:.bottom)}}}
+                        HStack {
+                            Menu("Export Markdown") {
+                                Button("Entire Chat…") { model.saveConversation() }
+                                Button("All Replies…") { model.saveConversation(assistantOnly: true) }
+                            }.disabled(model.busy || model.session.messages.isEmpty)
+                            Menu("Document") {
+                                Button("Build from Sources…", action: model.prepareResearchDocument)
+                                    .disabled(model.showRequestReview)
+                                Button("Review Document…", action: model.reviewDocumentCheck)
+                                    .disabled(model.session.documentJob == nil)
+                            }.disabled(model.busy || model.running)
+                        }
+                        Text("Export saves existing messages. Build creates a document from a source manifest.")
+                            .font(.caption2).foregroundStyle(.secondary)
+                        ScrollViewReader{proxy in ScrollView{LazyVStack(alignment:.leading,spacing:16){ForEach(model.session.messages){message in VStack(alignment:.leading,spacing:7){Text(message.role.uppercased()).font(.system(size:10,weight:.bold,design:.monospaced)).foregroundStyle(acid);Text(message.content).font(.system(size:13)).textSelection(.enabled);if let paths=message.imagePaths,!paths.isEmpty {Text("\(paths.count) image attachment(s) saved locally. Not resent automatically.").font(.caption2).foregroundStyle(.secondary)};if message.role=="assistant" {VStack(alignment:.leading,spacing:6){if message.stopReason == "length" {Text("INCOMPLETE — output limit reached").font(.caption.bold()).foregroundStyle(.orange)};if let tokens=message.outputTokens {Text("Output: \(tokens) tokens / stop: \(message.stopReason ?? "unknown")").font(.caption2).foregroundStyle(.secondary)};HStack{Button("Save Reply…"){model.saveMarkdownResponse(message.content)};if model.session.messages.last?.id == message.id {Button("Continue Reply"){model.prepareContinuation(message)}.disabled(model.busy || model.showRequestReview)}}}};if message.role=="assistant" && message.content.contains("```"){Button("Review File Proposal"){model.stageProposal(message.content)}}}.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(panel).clipShape(RoundedRectangle(cornerRadius:8)).id(message.id)}}}.onChange(of:model.session.messages.count){_,_ in if let id=model.session.messages.last?.id{proxy.scrollTo(id,anchor:.bottom)}}}
                         Text(model.contextStatus).font(.caption2).foregroundStyle(.secondary)
                         Toggle("Include current editor in this request",isOn:$model.includeEditor).font(.caption)
                         ImageAttachmentTray(model:model)
@@ -117,8 +165,22 @@ struct WorkbenchView: View {
             Button("Cancel",role:.cancel){model.pendingCloseTab=nil}
         }message:{Text("Save or discard \(model.pendingCloseTab ?? "this file"). Discard keeps a recovery checkpoint and does not change the project file.")}
         .alert("Workbench",isPresented:Binding(get:{model.error != nil},set:{if !$0{model.error=nil}})){Button("OK"){model.error=nil}}message:{Text(model.error ?? "")}
-        .sheet(isPresented:$model.showRequestReview){VStack(alignment:.leading,spacing:12){Text("Review the exact model request").font(.title2);Text("Destination: local Ollama / Model: \(model.pendingModel) / \(model.maskingCount) masking replacements").font(.caption);Text("Original transcript remains local. This frozen preview is what will be sent. Pattern matching cannot find every sensitive value. Image pixels are not redacted by text masking.").font(.caption);HStack{ForEach(model.pendingImages,id:\.self){encoded in if let data=Data(base64Encoded:encoded),let image=NSImage(data:data){Image(nsImage:image).resizable().scaledToFit().frame(width:200,height:120)}}};ScrollView{Text(model.requestPreview).font(.system(size:12,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)};HStack{Button("Cancel",action:model.cancelRequestReview);Spacer();Button("Send Reviewed Request",action:model.sendReviewedRequest).buttonStyle(.borderedProminent)}}.padding(22).frame(width:850,height:650)}
+        .sheet(isPresented:$model.showRequestReview){VStack(alignment:.leading,spacing:12){Text("Review the exact model request").font(.title2);Text("Destination: local Ollama / Model: \(model.pendingModel) / \(model.maskingCount) masking replacements").font(.caption);Text("Context: \(model.pendingContext) tokens / answer ceiling: \(OllamaClient.responseTokenLimit(context:model.pendingContext,inputEstimate:model.pendingPacket?.estimatedTokens ?? 0)) tokens").font(.caption);Text("Original transcript remains local. This frozen preview is what will be sent. Pattern matching cannot find every sensitive value. Image pixels are not redacted by text masking.").font(.caption);HStack{ForEach(model.pendingImages,id:\.self){encoded in if let data=Data(base64Encoded:encoded),let image=NSImage(data:data){Image(nsImage:image).resizable().scaledToFit().frame(width:200,height:120)}}};ScrollView{Text(model.requestPreview).font(.system(size:12,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)};HStack{Button("Cancel",action:model.cancelRequestReview);Spacer();Button("Send Reviewed Request",action:model.sendReviewedRequest).buttonStyle(.borderedProminent)}}.padding(22).frame(width:850,height:650)}
         .sheet(isPresented:$model.showProbeReview){VStack(alignment:.leading,spacing:14){Text("Approve one external request").font(.title2);if let request=model.pendingProbe{Text("HEAD \(request.url.absoluteString)").textSelection(.enabled);Text("Via \(request.proxy.description)");Text("\(model.probeMaskCount) masking replacements. This URL, including its query, is the exact transmitted value. The proxy can observe the destination; this is not an anonymity guarantee.");Text("No project files, cookies, authentication headers, or response body. Redirects refused. Failure ends the request; no direct fallback.")};HStack{Button("Cancel",action:model.cancelProxyProbe);Spacer();Button("Allow This Proxy Request",action:model.approveProxyProbe).buttonStyle(.borderedProminent)}}.padding(24).frame(width:700)}
+        .sheet(isPresented:$model.showDocumentReview){
+            VStack(alignment:.leading,spacing:12){
+                Text("Review Document").font(.title2)
+                if let candidate=model.pendingDocumentCandidate {Text(candidate.title).font(.headline)}
+                Picker("Review",selection:$documentReviewTab){Text("Chapter").tag("Chapter");Text("Code").tag("Code")}.pickerStyle(.segmented)
+                ScrollView{Text(documentReviewTab == "Code" ? model.documentCodePreview:model.documentChapterPreview).font(.system(size:12,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)}
+                Text("Runs one check in a temporary folder. Network is blocked.").font(.caption)
+                DisclosureGroup("Execution details"){
+                    Text("Hidden controls are shown as escapes. Project and sibling temporary folders are unreadable; writes stay in scratch. Approval is consumed before execution. A changed chapter or code needs a fresh review. These process restrictions are not a virtual machine.").font(.caption)
+                    if let candidate=model.pendingDocumentCandidate {Text("Code SHA-256: "+candidate.codeHash).font(.caption2).textSelection(.enabled)}
+                }
+                HStack{Button("Cancel"){model.showDocumentReview=false;model.pendingDocumentCandidate=nil};Spacer();Button("Run This Check",action:model.approveDocumentCheck).buttonStyle(.borderedProminent)}
+            }.onAppear{documentReviewTab="Chapter"}.padding(22).frame(width:950,height:700)
+        }
         .sheet(isPresented:$model.showProposal){VStack(alignment:.leading,spacing:12){Text("Review replacement for \(model.session.file)").font(.headline);Text("This stages the proposed contents. It does not write to disk until you Save. Existing draft is checkpointed.").font(.caption);HSplitView{VStack{Text("CURRENT DRAFT");ScrollView{Text(model.session.draft).font(.system(size:11,design:.monospaced)).textSelection(.enabled)}};VStack{Text("PROPOSED");TextEditor(text:$model.proposal).font(.system(size:11,design:.monospaced))}};HStack{Button("Cancel"){model.showProposal=false};Spacer();Button("Stage in Editor",action:model.applyProposal).disabled(model.session.file.isEmpty)}}.padding(20).frame(width:1000,height:650)}
     }
 }

@@ -8,7 +8,8 @@ build/
 
 .codex/config.toml
 
-browser-tools/
-artifacts/
-.env
-.env.*
+# Private local sessions and model research receipts
+/private/
+
+__pycache__/
+*.pyc

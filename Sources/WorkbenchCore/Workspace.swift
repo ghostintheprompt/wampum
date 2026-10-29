@@ -59,6 +59,8 @@ public struct ChatMessage: Codable, Identifiable, Equatable {
     public var role: String
     public var content: String
     public var imagePaths: [String]? = nil
+    public var stopReason: String? = nil
+    public var outputTokens: Int? = nil
     public init(role: String, content: String) { self.role = role; self.content = content }
 }
 public struct Session: Codable {
@@ -73,8 +75,11 @@ public struct Session: Codable {
     public var model = ""
     public var context = 8192
     public var messages: [ChatMessage] = []
+    public var researchCase: ResearchCaseState? = nil
     public var lab: LabMemory? = nil
     public var images: [String]? = nil
+    public var documentJob: String? = nil
+    public var documentCommand: String? = nil
     public var browserGoal: String? = nil
     public var browserURL: String? = nil
     public init() {}
@@ -99,9 +104,10 @@ public struct ContextPacket {
     public var messages: [[String: String]]
     public let omitted: Int
     public let estimatedTokens: Int
-    public static func build(system: String, history: [ChatMessage], context: Int, extraTokens: Int = 0) throws -> ContextPacket {
+    public static func build(system: String, history: [ChatMessage], context: Int, extraTokens: Int = 0, outputReserve: Int = 1536) throws -> ContextPacket {
         guard [4096,8192,16384,32768].contains(context) else { throw WorkbenchError.invalid("Unsupported context profile.") }
-        let budget = context - 1536
+        guard outputReserve >= 512, outputReserve < context else { throw WorkbenchError.invalid("Invalid output reserve.") }
+        let budget = context - outputReserve
         func estimate(_ text: String) -> Int { (text.utf8.count + 2) / 3 + 12 }
         var groups: [[ChatMessage]] = []
         for message in history {

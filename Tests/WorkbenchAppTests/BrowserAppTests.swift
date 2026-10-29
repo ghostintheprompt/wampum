@@ -10,6 +10,18 @@ final class BrowserAppTests:XCTestCase {
         try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true)
         return(root,WorkbenchModel(stateDirectory:root.appendingPathComponent("state")))
     }
+    @MainActor func testControllerProposalWithoutApprovalNeverReachesTransport()throws {
+        let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
+        let browser=m.browser
+        let call=BrowserCall(name:"browser_click",arguments:.object(["ref":.string("e1")]))
+        browser.tools=[try JSONDecoder().decode(MCPTool.self,from:Data(#"{"name":"browser_click","inputSchema":{"type":"object"}}"#.utf8))]
+        browser.connected=true;browser.proposed=call;browser.proposedControllerID=UUID()
+        browser.execute(call,model:m)
+        XCTAssertFalse(browser.busy)
+        XCTAssertEqual(browser.receipts.last?.execution,.notSent)
+        XCTAssertTrue(browser.receipts.last?.detail.contains("requires approval") == true)
+        XCTAssertEqual(browser.status,"Request blocked; no tool call sent.")
+    }
     @MainActor func testImageCopyVisionGateAndOCR()throws {
         let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
         let image=NSImage(size:NSSize(width:700,height:160));image.lockFocus();NSColor.white.setFill();NSRect(x:0,y:0,width:700,height:160).fill()

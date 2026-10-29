@@ -2,6 +2,31 @@ import XCTest
 @testable import WorkbenchCore
 
 final class BrowserCoreTests:XCTestCase {
+    func testExecutionHookBindsApprovalAndRejectsReplayAcrossRestore()throws {
+        let call=BrowserCall(name:"browser_click",arguments:.object(["ref":.string("e1")]))
+        let changed=BrowserCall(name:"browser_click",arguments:.object(["ref":.string("e2")]))
+        let approval=BrowserApproval(call:call,scopeID:"case-a")
+        var gate=BrowserRetryGate()
+        XCTAssertThrowsError(try gate.authorizeExecution(call,scopeID:"case-a",requiresApproval:true,approval:nil))
+        XCTAssertThrowsError(try gate.authorizeExecution(changed,scopeID:"case-a",requiresApproval:true,approval:approval))
+        XCTAssertThrowsError(try gate.authorizeExecution(call,scopeID:"case-b",requiresApproval:true,approval:approval))
+        try gate.authorizeExecution(call,scopeID:"case-a",requiresApproval:true,approval:approval)
+        var restored=try JSONDecoder().decode(BrowserRetryGate.self,from:JSONEncoder().encode(gate))
+        restored.resetRejections()
+        XCTAssertThrowsError(try restored.authorizeExecution(call,scopeID:"case-a",requiresApproval:true,approval:approval))
+        XCTAssertNoThrow(try restored.authorizeExecution(call,scopeID:"case-a",requiresApproval:true,approval:BrowserApproval(call:call,scopeID:"case-a")))
+    }
+    func testExecutionHookRejectsChangedObservedContext()throws {
+        let call=BrowserCall(name:"browser_click",arguments:.object(["ref":.string("e1")]))
+        let approval=BrowserApproval(call:call,scopeID:"case-a",contextSHA256:"observed-a")
+        var gate=BrowserRetryGate()
+        XCTAssertThrowsError(try gate.authorizeExecution(call,scopeID:"case-a",requiresApproval:true,approval:approval,contextSHA256:"observed-b"))
+        XCTAssertNoThrow(try gate.authorizeExecution(call,scopeID:"case-a",requiresApproval:true,approval:approval,contextSHA256:"observed-a"))
+    }
+    func testExecutionHookRetainsDirectOperatorReadAndOldGateCompatibility()throws {
+        var gate=try JSONDecoder().decode(BrowserRetryGate.self,from:Data("{\"rejections\":{}}".utf8))
+        XCTAssertNoThrow(try gate.authorizeExecution(BrowserCall(name:"browser_snapshot",arguments:.object([:])),scopeID:"general",requiresApproval:false,approval:nil))
+    }
     func testCanonicalRejectedRequestsAndPersistence()throws {
         let a=BrowserCall(name:"browser_click",arguments:.object(["target":.string("a"),"button":.string("left")]))
         let b=BrowserCall(name:"browser_click",arguments:.object(["button":.string("left"),"target":.string("a")]))

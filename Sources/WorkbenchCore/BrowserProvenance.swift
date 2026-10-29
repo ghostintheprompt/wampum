@@ -6,8 +6,9 @@ public struct BrowserApproval:Codable {
     public let kind:String
     public let scopeID:String
     public let callSHA256:String
-    public init(call:BrowserCall,scopeID:String,kind:String="operator-reviewed-exact-call") {
-        id=UUID();approvedAt=Date();self.kind=kind;self.scopeID=scopeID;callSHA256=BrowserReceipt.hash(Data(call.fingerprint.utf8))
+    public let contextSHA256:String?
+    public init(call:BrowserCall,scopeID:String,kind:String="operator-reviewed-exact-call",contextSHA256:String?=nil) {
+        id=UUID();approvedAt=Date();self.kind=kind;self.scopeID=scopeID;self.contextSHA256=contextSHA256;callSHA256=BrowserReceipt.hash(Data(call.fingerprint.utf8))
     }
 }
 public struct BrowserProvenance:Codable {

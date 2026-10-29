@@ -32,7 +32,19 @@ public struct BrowserCall: Codable, Equatable, Sendable {
 public struct BrowserRetryGate: Codable {
     public var rejections:[String:String]=[:]
     public var deniedTools:[String:String]? = nil
+    public var consumedApprovalIDs:[UUID]? = nil
     public init(){}
+    public mutating func authorizeExecution(_ call:BrowserCall,scopeID:String,requiresApproval:Bool,approval:BrowserApproval?,contextSHA256:String?=nil)throws {
+        try check(call)
+        guard !requiresApproval || approval != nil else{throw WorkbenchError.invalid("This proposal requires approval of the exact action before execution.")}
+        if let approval {
+            guard approval.scopeID==scopeID,approval.callSHA256==BrowserReceipt.hash(Data(call.fingerprint.utf8)) else{throw WorkbenchError.invalid("Approval does not match this exact action and scenario.")}
+            guard approval.contextSHA256==contextSHA256 else{throw WorkbenchError.invalid("Observed page, objective or scope changed; review this action again.")}
+            guard !(consumedApprovalIDs ?? []).contains(approval.id) else{throw WorkbenchError.invalid("This approval has already been used. Review a fresh action.")}
+            consumedApprovalIDs=(consumedApprovalIDs ?? [])+[approval.id]
+        }
+    }
+    public mutating func resetRejections(){rejections=[:];deniedTools=nil}
     public func check(_ call:BrowserCall)throws {if let reason=deniedTools?[call.name]{throw WorkbenchError.invalid("Tool permission remains denied: "+reason)};if let reason=rejections[call.fingerprint]{throw WorkbenchError.invalid("Repeated rejected request blocked: "+reason+". Inspect diagnostics and explicitly reset only after conditions change.")}}
     public mutating func reject(_ call:BrowserCall,reason:String){
         rejections[call.fingerprint]=reason

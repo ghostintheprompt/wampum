@@ -3,6 +3,18 @@ import XCTest
 @testable import WorkbenchCore
 final class AppTests:XCTestCase {
     @MainActor func fixture()throws->(URL,WorkbenchModel){let root=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString);try FileManager.default.createDirectory(at:root,withIntermediateDirectories:true);let model=WorkbenchModel(stateDirectory:root.appendingPathComponent("state"));model.session.project=root.path;return(root,model)}
+    @MainActor func testContinuationPreservesUnsentPromptAndRequiresLatestReply() throws {
+        let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
+        var answer=ChatMessage(role:"assistant",content:"# Partial\n")
+        answer.stopReason="length";answer.outputTokens=1024
+        m.session.messages=[answer];m.session.prompt="unsent work"
+        m.prepareContinuation(answer);XCTAssertEqual(m.session.prompt,"unsent work")
+        m.session.prompt="";m.error=nil;m.prepareContinuation(answer)
+        XCTAssertTrue(m.session.prompt.contains("exactly where it stopped"));XCTAssertFalse(m.busy);XCTAssertFalse(m.showRequestReview)
+        let restored=try m.store.load()
+        XCTAssertEqual(restored.messages.last?.stopReason,"length")
+        XCTAssertEqual(restored.messages.last?.outputTokens,1024)
+    }
     @MainActor func testProposalStagesWithoutWritingThenSaves()throws{
         let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
         let file=root.appendingPathComponent("case.txt");try Data("before".utf8).write(to:file);m.openFile("case.txt")
@@ -16,6 +28,14 @@ final class AppTests:XCTestCase {
         let sessions=try checkpoints.map{try JSONDecoder().decode(Session.self,from:Data(contentsOf:$0))}
         XCTAssertTrue(sessions.contains{$0.file=="a" && $0.draft=="unsaved"});XCTAssertEqual(try String(contentsOf:root.appendingPathComponent("a")),"a")
         m.session.notes="handoff";m.persist();let restored=WorkbenchModel(stateDirectory:m.store.directory);XCTAssertEqual(restored.session.notes,"handoff");XCTAssertEqual(restored.session.file,"b")
+    }
+    @MainActor func testCheckProgressAppearsBeforeProcessFinishes() async throws {
+        let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
+        m.command="printf 'PHASE_ONE'; sleep 2; printf 'PHASE_TWO'";m.runCheck()
+        for _ in 0..<30 {if m.output.hasSuffix("PHASE_ONE"){break};try await Task.sleep(nanoseconds:50_000_000)}
+        XCTAssertTrue(m.running);XCTAssertTrue(m.output.hasSuffix("PHASE_ONE"))
+        for _ in 0..<60 {if !m.running{break};try await Task.sleep(nanoseconds:50_000_000)}
+        XCTAssertFalse(m.running);XCTAssertTrue(m.output.contains("PHASE_TWO"));XCTAssertEqual(m.output.components(separatedBy:"PHASE_ONE").count,3)
     }
     @MainActor func testActualCheckCapturesNonzeroExit()async throws{
         let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}

@@ -2,9 +2,17 @@
 set -eu
 cd "$(dirname "$0")/.."
 swift build -c release
-APP="$PWD/build/Wampum.app"
+APP="${WAMPUM_APP_OUTPUT:-$PWD/build/Wampum.app}"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp .build/release/Wampum "$APP/Contents/MacOS/Wampum"
+cp .build/release/WampumDocument "$APP/Contents/MacOS/WampumDocument"
+cp scripts/document-check.py "$APP/Contents/Resources/document-check.py"
+cp scripts/document-check.py .build/release/document-check.py
+cp scripts/document-worker.py "$APP/Contents/Resources/document-worker.py"
+cp scripts/document-worker.py .build/release/document-worker.py
+cp .build/release/WampumQuality "$APP/Contents/MacOS/WampumQuality"
+codesign --force --sign - "$APP/Contents/MacOS/WampumQuality"
+codesign --force --sign - "$APP/Contents/MacOS/WampumDocument"
 cp .build/release/WampumController "$APP/Contents/MacOS/WampumController"
 codesign --force --sign - "$APP/Contents/MacOS/WampumController"
 cp .build/release/WampumIntegrity "$APP/Contents/MacOS/WampumIntegrity"
@@ -34,5 +42,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
+/usr/bin/plutil -replace CFBundleIdentifier -string "${WAMPUM_BUNDLE_ID:-com.ghostintheprompt.wampum}" "$APP/Contents/Info.plist"
+/usr/bin/plutil -replace CFBundleName -string "${WAMPUM_APP_NAME:-Wampum}" "$APP/Contents/Info.plist"
+/usr/bin/plutil -replace CFBundleDisplayName -string "${WAMPUM_APP_NAME:-Wampum}" "$APP/Contents/Info.plist"
 codesign --force --sign - "$APP"
 printf '%s\n' "$APP"

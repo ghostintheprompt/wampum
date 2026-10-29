@@ -14,6 +14,7 @@ for line in sys.stdin:
  if r['method']=='initialize': value={'protocolVersion':'2024-11-05','capabilities':{},'serverInfo':{'name':'fixture','version':'1'}}
  elif r['method']=='tools/call':
   name=r['params']['name']
+  with open(sys.argv[2],'a') as log: log.write(name+'\n')
   if name=='browser_click' and mode=='disconnect': sys.exit(0)
   if name=='browser_click' and mode=='action-error': value={'isError':True,'content':[{'type':'text','text':'tool reported action error'}]}
   elif name=='browser_snapshot' and mode=='refresh-error': value={'isError':True,'content':[{'type':'text','text':'snapshot permission denied'}]}
@@ -24,7 +25,7 @@ for line in sys.stdin:
 """#
         try Data(code.utf8).write(to:script)
         let m=WorkbenchModel(stateDirectory:root.appendingPathComponent("state"));let b=m.browser
-        try await b.connection.start(executable:URL(fileURLWithPath:"/usr/bin/python3"),arguments:["-u",script.path,mode],directory:root,localOnly:true)
+        try await b.connection.start(executable:URL(fileURLWithPath:"/usr/bin/python3"),arguments:["-u",script.path,mode,root.appendingPathComponent("calls.log").path],directory:root,localOnly:true)
         b.connected=true;b.snapshotFresh=true;b.tools=[try JSONDecoder().decode(MCPTool.self,from:Data(#"{"name":"browser_click","inputSchema":{"type":"object"}}"#.utf8))]
         let call=BrowserCall(name:"browser_click",arguments:.object(["target":.string("e1")]))
         b.proposed=call;b.proposedControllerID=UUID();return(root,m,call)
@@ -32,24 +33,24 @@ for line in sys.stdin:
     @MainActor func finished(_ b:BrowserModel)async throws {for _ in 0..<200 {if !b.busy{return};try await Task.sleep(nanoseconds:20_000_000)};XCTFail("Fixture did not complete")}
     @MainActor func testRefreshFailureDoesNotTurnSuccessfulActionIntoFailedAction()async throws {
         let(root,m,call)=try await fixture("refresh-error");defer{try? FileManager.default.removeItem(at:root)}
-        let id=try XCTUnwrap(m.browser.proposedControllerID);m.browser.execute(call,model:m);try await finished(m.browser)
+        let id=try XCTUnwrap(m.browser.proposedControllerID);m.browser.approveProposal(model:m);try await finished(m.browser)
         let r=try XCTUnwrap(m.browser.receipts.last);XCTAssertEqual(r.execution,.succeeded);XCTAssertEqual(r.refresh,.failed);XCTAssertEqual(r.capture,.failed);XCTAssertFalse(m.browser.snapshotFresh)
         XCTAssertTrue(m.browser.actionOutcomes[id]?.contains("Tool succeeded")==true);XCTAssertTrue(m.browser.status.contains("Do not repeat"));XCTAssertNoThrow(try m.browser.validate(call))
         XCTAssertTrue(m.browser.snapshot.contains("observation unavailable"));await m.browser.connection.stop()
     }
     @MainActor func testCaptureFailurePreservesSuccessfulActionAndFreshDOM()async throws {
         let(root,m,call)=try await fixture("capture-error");defer{try? FileManager.default.removeItem(at:root)}
-        m.browser.execute(call,model:m);try await finished(m.browser)
+        m.browser.approveProposal(model:m);try await finished(m.browser)
         let r=try XCTUnwrap(m.browser.receipts.last);XCTAssertEqual(r.execution,.succeeded);XCTAssertEqual(r.refresh,.succeeded);XCTAssertEqual(r.capture,.failed);XCTAssertTrue(m.browser.snapshotFresh)
         XCTAssertTrue(m.browser.status.contains("screenshot failed"));XCTAssertNoThrow(try m.browser.validate(call));await m.browser.connection.stop()
     }
     @MainActor func testReportedToolErrorIsNotInventedAsSuccess()async throws {
         let(root,m,call)=try await fixture("action-error");defer{try? FileManager.default.removeItem(at:root)}
-        m.browser.execute(call,model:m);try await finished(m.browser);XCTAssertEqual(m.browser.receipts.last?.execution,.reportedFailure);XCTAssertEqual(m.browser.receipts.last?.refresh,.notRequested);XCTAssertThrowsError(try m.browser.validate(call));await m.browser.connection.stop()
+        m.browser.approveProposal(model:m);try await finished(m.browser);XCTAssertEqual(m.browser.receipts.last?.execution,.reportedFailure);XCTAssertEqual(m.browser.receipts.last?.refresh,.notRequested);XCTAssertThrowsError(try m.browser.validate(call));await m.browser.connection.stop()
     }
     @MainActor func testLostResponseRemainsUnknownAcrossRestartWithoutReplay()async throws {
         let(root,m,call)=try await fixture("disconnect");defer{try? FileManager.default.removeItem(at:root)}
-        m.browser.execute(call,model:m);try await finished(m.browser);XCTAssertEqual(m.browser.receipts.last?.execution,.unknown)
+        m.browser.approveProposal(model:m);try await finished(m.browser);XCTAssertEqual(m.browser.receipts.last?.execution,.unknown)
         let restored=WorkbenchModel(stateDirectory:m.store.directory);XCTAssertEqual(restored.browser.receipts.last?.execution,.unknown);XCTAssertThrowsError(try restored.browser.validate(call));XCTAssertFalse(restored.browser.busy);XCTAssertFalse(restored.browser.connected);await m.browser.connection.stop()
     }
     @MainActor func testPendingRecoveryAndCorruptHistoryPreservation()throws {
@@ -68,7 +69,7 @@ for line in sys.stdin:
         m.browser.snapshot="PRIVATE_PAGE_CONTEXT";m.session.scope="PRIVATE_SCOPE";m.session.notes="PRIVATE_NOTES"
         m.browser.approveProposal(model:m);try await finished(m.browser)
         let receipt=try XCTUnwrap(m.browser.receipts.last), provenance=try XCTUnwrap(receipt.provenance), approval=try XCTUnwrap(provenance.approval)
-        XCTAssertEqual(receipt.execution,.succeeded);XCTAssertEqual(approval.callSHA256,receipt.fingerprint);XCTAssertEqual(approval.scopeID,"general")
+        XCTAssertEqual(receipt.execution,.succeeded);XCTAssertEqual(approval.callSHA256,receipt.fingerprint);XCTAssertEqual(approval.scopeID,"general");XCTAssertNotNil(approval.contextSHA256)
         XCTAssertEqual(provenance.proposalSource,"external-controller");XCTAssertNotNil(provenance.pageSHA256)
         let data=try JSONEncoder().encode([receipt]), text=String(decoding:data,as:UTF8.self)
         for secret in ["PRIVATE_PAGE_CONTEXT","PRIVATE_SCOPE","PRIVATE_NOTES"]{XCTAssertFalse(text.contains(secret))}
@@ -87,10 +88,27 @@ for line in sys.stdin:
         try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:artifact.path)
         await m.browser.connection.stop()
     }
+    @MainActor func testSpentApprovalCannotSendAnotherTransportCall()async throws {
+        let(root,m,call)=try await fixture("capture-error");defer{try? FileManager.default.removeItem(at:root)}
+        let originalPage=m.browser.snapshot
+        m.browser.approveProposal(model:m);try await finished(m.browser)
+        let first=try XCTUnwrap(m.browser.receipts.last)
+        XCTAssertEqual(first.execution,.succeeded)
+        let approval=try XCTUnwrap(first.provenance?.approval)
+        let before=try String(contentsOf:root.appendingPathComponent("calls.log"))
+        m.browser.snapshot=originalPage
+        m.browser.execute(call,model:m,approval:approval);try await finished(m.browser)
+        XCTAssertEqual(m.browser.receipts.last?.execution,.notSent)
+        XCTAssertTrue(m.browser.receipts.last?.detail.contains("already been used") == true)
+        XCTAssertEqual(try String(contentsOf:root.appendingPathComponent("calls.log")),before)
+        await m.browser.connection.stop()
+    }
     @MainActor func testRawExecutionDoesNotInventOperatorApproval()async throws {
         let(root,m,call)=try await fixture("capture-error");defer{try? FileManager.default.removeItem(at:root)}
         m.browser.execute(call,model:m);try await finished(m.browser)
         XCTAssertNil(m.browser.receipts.last?.provenance?.approval)
+        XCTAssertEqual(m.browser.receipts.last?.execution,.notSent)
+        XCTAssertFalse(m.browser.busy)
         let loaded=try BrowserReceiptStore(root:m.store.directory,scope:"general").load()
         XCTAssertNil(loaded.last?.provenance?.approval);XCTAssertEqual(loaded.last?.provenance?.callSHA256,loaded.last?.fingerprint)
         await m.browser.connection.stop()

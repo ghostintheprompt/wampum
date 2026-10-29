@@ -239,3 +239,11 @@ Undo stacks and cursor/scroll positions are not persisted per tab. Switching con
 ![Native editor tabs with synthetic drafts](docs/editor-tabs.jpg)
 
 Public default verification for this editor slice: 104 tests, 96 passed, eight opt-in or private-sibling integration skips, zero failures. The private development run had 97 passes/seven skips because its sibling-monitor integration was available. No new model inference was needed to test editor persistence.
+
+## October 29 research-workflow hardening
+
+Adds case contracts, format-aware source capture, explicitly reviewed evidence memory, stale-request checks, research request/response journals, section-review records, a quality-record scorer and an opt-in isolated Python-function test runner. Case replacement checkpoints previous context before clearing it. New case controls are in the File menu.
+
+The development suite passed 186 tests with nine opt-in skips; a separate 37-test Python boundary suite passed. Narrow installed-model assisted-memory checks passed. These checks do not establish complete-document quality, production security or frontier-model equivalence. Native UI acceptance for the new case menus remains pending. Section generation/coverage and final quality-release integration are still incomplete.
+
+The isolated runner accepts reviewed, pinned stateless JSON functions; legacy shared-process modes remain labeled. Local review records are not authenticated execution proof. No model download, cloud fallback, account or telemetry dependency is introduced.

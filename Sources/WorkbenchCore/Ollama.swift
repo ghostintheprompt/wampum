@@ -55,15 +55,20 @@ public struct OllamaClient {
         return try JSONDecoder().decode(List.self, from: await request("api/tags")).models.filter { $0.capabilities == nil || $0.capabilities!.contains("completion") }
     }
     public func show(_ model: String) async throws -> ModelInfo { try JSONDecoder().decode(ModelInfo.self, from: await request("api/show", body:["model":model])) }
-    public func chat(model: String, packet: ContextPacket, context: Int, thinking: Bool, supportsThinking: Bool, images: [String] = [], timeout: TimeInterval = 600) async throws -> ChatReply {
-        var body: [String:Any] = ["model":model, "messages":packet.messages, "stream":false, "keep_alive":"5m", "options":["num_ctx":context,"num_predict":1024,"temperature":0.2]]
+    public func chat(model: String, packet: ContextPacket, context: Int, thinking: Bool, supportsThinking: Bool, images: [String] = [], timeout: TimeInterval = 600, onRawResponse: (@Sendable (Data) throws -> Void)? = nil) async throws -> ChatReply {
+        var body: [String:Any] = ["model":model, "messages":packet.messages, "stream":false, "keep_alive":"5m", "options":["num_ctx":context,"num_predict":Self.responseTokenLimit(context:context,inputEstimate:packet.estimatedTokens),"temperature":0.2]]
         if !images.isEmpty {
             var messages=packet.messages.map { $0 as [String:Any] }
             guard let last=messages.lastIndex(where:{$0["role"] as? String == "user"}) else {throw WorkbenchError.invalid("Images require a user message.")}
             messages[last]["images"]=images;body["messages"]=messages
         }
         if supportsThinking { body["think"] = thinking }
-        return try JSONDecoder().decode(ChatReply.self, from: await request("api/chat", body:body, timeout:timeout))
+        let raw = try await request("api/chat", body:body, timeout:timeout)
+        try onRawResponse?(raw)
+        return try JSONDecoder().decode(ChatReply.self, from: raw)
+    }
+    public static func responseTokenLimit(context:Int,inputEstimate:Int) -> Int {
+        min(4096,max(1,context-inputEstimate-512))
     }
     public func unload(_ model: String) async throws { _ = try await request("api/generate", body:["model":model,"keep_alive":0]) }
 }
@@ -79,5 +84,46 @@ extension OllamaClient {
         var body:[String:Any]=["model":model,"messages":packet.messages,"stream":false,"keep_alive":"5m","options":["num_ctx":context,"num_predict":512,"temperature":0.1],"tools":try JSONSerialization.jsonObject(with:JSONEncoder().encode(tools.map(\.ollama)))]
         if supportsThinking {body["think"]=false}
         return try JSONDecoder().decode(BrowserPlanReply.self,from:await request("api/chat",body:body,timeout:180))
+    }
+}
+
+private struct OllamaStreamPart:Decodable {
+    struct Message:Decodable {let content:String?;let thinking:String?}
+    let message:Message?;let done:Bool?;let done_reason:String?;let error:String?
+    let prompt_eval_count:Int?;let eval_count:Int?;let eval_duration:Double?;let load_duration:Double?;let total_duration:Double?
+}
+extension OllamaClient {
+    public func streamingChat(model:String,packet:ContextPacket,context:Int,thinking:Bool,supportsThinking:Bool,schemaJSON:Data?=nil,timeout:TimeInterval=900,onDelta:@Sendable(String)async throws->Void) async throws->ChatReply {
+        var body:[String:Any]=["model":model,"messages":packet.messages,"stream":true,"keep_alive":"5m","options":["num_ctx":context,"num_predict":Self.responseTokenLimit(context:context,inputEstimate:packet.estimatedTokens),"temperature":0.2]]
+        if supportsThinking {body["think"]=thinking}
+        if let schemaJSON {body["format"]=try JSONSerialization.jsonObject(with:schemaJSON)}
+        let url=base.appendingPathComponent("api/chat");try await guardrail.authorize(url,component:"Ollama",operation:"api/chat streaming")
+        var request=URLRequest(url:url);request.httpMethod="POST";request.httpBody=try JSONSerialization.data(withJSONObject:body);request.setValue("application/json",forHTTPHeaderField:"Content-Type");request.timeoutInterval=timeout
+        let configuration=URLSessionConfiguration.ephemeral;configuration.httpShouldSetCookies=false;configuration.connectionProxyDictionary=[:];configuration.proxyConfigurations=[]
+        let session=URLSession(configuration:configuration,delegate:NoRedirects(guardrail),delegateQueue:nil);defer{session.invalidateAndCancel()}
+        return try await withTaskCancellationHandler(operation:{
+            do {
+                let (bytes,response)=try await session.bytes(for:request)
+                guard let http=response as? HTTPURLResponse,(200..<300).contains(http.statusCode) else {
+                    var detail=Data();for try await byte in bytes {detail.append(byte);if detail.count>=2000{break}}
+                    throw WorkbenchError.invalid(String(decoding:detail,as:UTF8.self))
+                }
+                var answer="",reasoning=""
+                for try await line in bytes.lines {
+                    try Task.checkCancellation();if line.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty{continue}
+                    let part=try JSONDecoder().decode(OllamaStreamPart.self,from:Data(line.utf8))
+                    if let error=part.error {throw WorkbenchError.invalid(error)}
+                    if let delta=part.message?.content,!delta.isEmpty {
+                        guard answer.utf8.count+delta.utf8.count<=2_097_152 else{throw WorkbenchError.invalid("Response exceeded2MB; received text remains in the caller's checkpoint.")}
+                        try await onDelta(delta);answer+=delta
+                    }
+                    if let delta=part.message?.thinking {reasoning+=delta}
+                    if part.done==true {
+                        return ChatReply(message:ChatReply.Message(content:answer,thinking:reasoning.isEmpty ? nil:reasoning),prompt_eval_count:part.prompt_eval_count,eval_count:part.eval_count,eval_duration:part.eval_duration,load_duration:part.load_duration,total_duration:part.total_duration,done_reason:part.done_reason)
+                    }
+                }
+                throw WorkbenchError.invalid("Stream ended without a completion record; received text remains in the caller's checkpoint.")
+            }catch{if Task.isCancelled{throw CancellationError()};throw error}
+        },onCancel:{session.invalidateAndCancel()})
     }
 }

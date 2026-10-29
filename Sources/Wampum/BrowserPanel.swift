@@ -67,11 +67,12 @@ struct BrowserPanel:View {
                     if inspector=="Actions" {
                         TextField("Browser objective",text:$browser.goal).textFieldStyle(.roundedBorder)
                         Button("Review Context → Ask Qwen"){browser.preparePlan(model:model)}.disabled(!browser.connected || browser.busy || browser.capturing || browser.proposed != nil)
-                        Text("Qwen proposes one action. Exact arguments appear below before execution.").font(.caption2).foregroundStyle(.secondary)
+                        Text("Qwen proposes. You approve one exact action.").font(.caption2).foregroundStyle(.secondary)
                         if let call=browser.proposed {
                             Text(call.name).font(.system(size:12,weight:.bold,design:.monospaced))
                             ScrollView {Text(call.arguments.pretty).font(.system(size:11,design:.monospaced)).textSelection(.enabled)}.frame(maxHeight:140)
                             HStack {Button("Deny"){browser.denyProposal(model:model)};Button("Allow This Action"){browser.approveProposal(model:model)}.disabled(browser.busy || browser.capturing)}
+                            Text("One use. This page snapshot, goal and scope only.").font(.caption2).foregroundStyle(.secondary)
                         }
                         if !browser.explanation.isEmpty {ScrollView{Text(browser.explanation).font(.caption).textSelection(.enabled)}.frame(maxHeight:100)}
                         ScrollView {Text(browser.events.joined(separator:"\n")).font(.system(size:10,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)}
