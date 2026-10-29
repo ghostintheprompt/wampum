@@ -18,7 +18,7 @@ extension WorkbenchModel {
     }
     /// Commit only after the prior case is recoverable and the new state is saved.
     func replaceResearchCase(_ state: ResearchCaseState) throws {
-        guard !busy, !running, !showRequestReview, !showProposal, !showDocumentReview, !probing,
+        guard !evaluatingQuality, !busy, !running, !showRequestReview, !showProposal, !showDocumentReview, !probing,
               !browser.connected, !browser.busy, !browser.disconnecting, !controller.enabled else {
             throw WorkbenchError.invalid("Finish active work and disconnect the browser before replacing a case.")
         }

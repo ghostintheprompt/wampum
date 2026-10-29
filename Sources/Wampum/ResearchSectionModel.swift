@@ -59,9 +59,16 @@ extension WorkbenchModel {
             contractHash: binding.contractHash, requiredSectionIDs: state.contract.requiredUnits, sources: binding.sources)
         do { workflow = try currentResearchSections() }
         catch { self.error = "Response retained against its original inputs; current case validation failed. " + error.localizedDescription }
+        var requestHash: String?; var responseHash: String?; var bindingHash: String?
+        if requestID.hasPrefix("/") {
+            let root = URL(fileURLWithPath: requestID)
+            requestHash = try IntegrityCheck.hashFile(root.appendingPathComponent("request.json").path, limit: 4_194_304).0
+            responseHash = try IntegrityCheck.hashFile(root.appendingPathComponent("response.json").path, limit: 4_194_304).0
+            bindingHash = try IntegrityCheck.hashFile(root.appendingPathComponent("section-request.json").path, limit: 4_194_304).0
+        }
         try workflow.record(.init(sectionID: binding.unitID, caseID: binding.caseID, contractHash: binding.contractHash,
             body: body, stopReason: stopReason, outputTokens: outputTokens, inputTokens: inputTokens,
-            sources: binding.sources, provenance: .init(model: model, requestID: requestID)))
+            sources: binding.sources, provenance: .init(model: model, requestID: requestID, requestSHA256: requestHash, responseSHA256: responseHash, bindingSHA256: bindingHash)))
         state.sectionWorkflow = workflow
         var target = session; target.researchCase = state
         try saveEditorSession(target); session = target

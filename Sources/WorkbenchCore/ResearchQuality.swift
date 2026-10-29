@@ -3,14 +3,14 @@ import Foundation
 /// Validates evidence-linked review records. It does not execute programs,
 /// authenticate reviewers, or independently establish that cited evidence is true.
 public enum ResearchQuality {
-    public struct Criterion: Codable { public var id: String; public var requirement: String }
-    public struct Dimension: Codable {
+    public struct Criterion: Codable, Sendable { public var id: String; public var requirement: String }
+    public struct Dimension: Codable, Sendable {
         public var id: String
         public var name: String
         public var weight: Double
         public var criteria: [Criterion]
     }
-    public struct Rubric: Codable {
+    public struct Rubric: Codable, Sendable {
         public var id: String
         public var version: String
         public var sourceManifestHash: String
@@ -26,25 +26,25 @@ public enum ResearchQuality {
         public var gates: [Criterion]
         public var requiredUnits: [Criterion]
     }
-    public enum Status: String, Codable { case pass, fail, notEvaluated }
-    public struct Rating: Codable {
+    public enum Status: String, Codable, Sendable { case pass, fail, notEvaluated }
+    public struct Rating: Codable, Sendable {
         public var criterionID: String
         public var score: Int?
         public var evidence: [String]
     }
-    public struct Check: Codable {
+    public struct Check: Codable, Sendable {
         public var id: String
         public var status: Status
         public var evidence: [String]
     }
-    public struct Evidence: Codable {
+    public struct Evidence: Codable, Sendable {
         public var id: String
         public var kind: String
         public var path: String
         public var sha256: String
         public var artifactHash: String
     }
-    public struct Trial: Codable {
+    public struct Trial: Codable, Sendable {
         public var id: String
         public var caseID: String
         public var condition: String
@@ -53,7 +53,7 @@ public enum ResearchQuality {
         public var configuration: [String: JSONValue]
         public var assistance: [String]
     }
-    public struct Assessment: Codable {
+    public struct Assessment: Codable, Sendable {
         public var rubricID: String
         public var rubricVersion: String
         public var rubricHash: String
@@ -66,7 +66,7 @@ public enum ResearchQuality {
         public var gates: [Check]
         public var units: [Check]
     }
-    public struct Report: Codable {
+    public struct Report: Codable, Sendable {
         public var rubricID: String
         public var rubricVersion: String
         public var rubricHash: String
@@ -238,6 +238,6 @@ public enum ResearchQuality {
         let critical = rubric.criticalMinimums.keys.sorted().filter { id in if let score = ratings[id]?.score { return score < rubric.criticalMinimums[id]! }; return false }
         let score = unrated.isEmpty ? lower : nil
         let passes = score.map { $0 >= rubric.passThreshold } == true && failed.isEmpty && unverified.isEmpty && unmet.isEmpty && below.isEmpty && critical.isEmpty && trial.state == "completed"
-        return Report(rubricID: rubric.id, rubricVersion: rubric.version, rubricHash: try rubricHash(rubric), artifactHash: assessment.artifactHash, sourceManifestHash: rubric.sourceManifestHash, trialManifestHash: assessment.trialManifestHash, trialID: trial.id, condition: trial.condition, authorArm: trial.authorArm, trialState: trial.state, reviewer: assessment.reviewer, score: score, lowerBound: lower, upperBound: upper, assessedWeight: assessed, dimensionScores: dimensionScores, unratedCriteria: unrated, failedGates: failed, unverifiedGates: unverified, unmetUnits: unmet, belowFloor: below, criticalFailures: critical, failedUnits: rubric.requiredUnits.filter { units[$0.id]?.status == .fail }.map(\.id), unverifiedUnits: rubric.requiredUnits.filter { units[$0.id] == nil || units[$0.id]?.status == .notEvaluated }.map(\.id), dimensionBounds: dimensionBounds, reviewRecordMeetsPolicy: passes, limitation: "Validates supplied evidence-linked review records and pinned files only. Does not verify evidence truth, execute code, authenticate the reviewer or certify an isolated oracle. Native document acceptance is not automatically wired to this report.")
+        return Report(rubricID: rubric.id, rubricVersion: rubric.version, rubricHash: try rubricHash(rubric), artifactHash: assessment.artifactHash, sourceManifestHash: rubric.sourceManifestHash, trialManifestHash: assessment.trialManifestHash, trialID: trial.id, condition: trial.condition, authorArm: trial.authorArm, trialState: trial.state, reviewer: assessment.reviewer, score: score, lowerBound: lower, upperBound: upper, assessedWeight: assessed, dimensionScores: dimensionScores, unratedCriteria: unrated, failedGates: failed, unverifiedGates: unverified, unmetUnits: unmet, belowFloor: below, criticalFailures: critical, failedUnits: rubric.requiredUnits.filter { units[$0.id]?.status == .fail }.map(\.id), unverifiedUnits: rubric.requiredUnits.filter { units[$0.id] == nil || units[$0.id]?.status == .notEvaluated }.map(\.id), dimensionBounds: dimensionBounds, reviewRecordMeetsPolicy: passes, limitation: "Validates supplied evidence-linked review records and pinned files only. Does not verify evidence truth, execute code, authenticate the reviewer or certify an isolated oracle. Native operator-reviewed export may enforce this report alongside fresh case, source, journal and review checks; the report alone never authorizes release.")
     }
 }

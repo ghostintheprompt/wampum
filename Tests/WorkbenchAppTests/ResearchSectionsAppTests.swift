@@ -140,6 +140,7 @@ s=http.server.HTTPServer(('127.0.0.1',0),H);print(s.server_port,flush=True);s.se
         XCTAssertFalse(model.busy); XCTAssertNil(model.error)
         let attempt = try XCTUnwrap(model.session.researchCase?.sectionWorkflow?.attempts.first)
         XCTAssertEqual(attempt.sources, binding.sources); XCTAssertEqual(attempt.stopReason, "length")
+        XCTAssertNotNil(attempt.provenance.requestSHA256); XCTAssertNotNil(attempt.provenance.responseSHA256); XCTAssertNotNil(attempt.provenance.bindingSHA256)
         XCTAssertEqual(try model.currentResearchSections().state(for: "analysis"), .incomplete)
         let journal = URL(fileURLWithPath: attempt.provenance.requestID)
         let raw = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: journal.appendingPathComponent("response.json"))) as? [String: Any])

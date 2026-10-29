@@ -37,6 +37,7 @@ public struct ResearchCaseState: Codable, Sendable {
     public var sources: [ResearchSourceCapture]
     public var sourcePlan: ResearchSourcePlan?
     public var activeSourceUnit: String?
+    public var releaseApproval: ResearchRelease.Approval?
     public var sectionDrafts: [String: String]?
     public var sectionInstructions: [String: String]?
     public var sectionWorkflow: ResearchSectionWorkflow?

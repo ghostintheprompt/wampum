@@ -28,13 +28,15 @@ import WorkbenchCore
                 Button("Import Research Case Contract…", action: model.importResearchContract)
                     .disabled(model.busy || model.showRequestReview)
                 Button("Capture Case Source…", action: model.captureCaseSource)
-                    .disabled(model.busy || model.showRequestReview || model.session.researchCase == nil)
+                    .disabled(model.busy || model.evaluatingQuality || model.researchReviewOpen || model.showRequestReview || model.session.researchCase == nil)
                 Button("Review Case Memory…", action: model.importResearchLedger)
-                    .disabled(model.busy || model.showRequestReview || model.session.researchCase == nil)
+                    .disabled(model.busy || model.evaluatingQuality || model.researchReviewOpen || model.showRequestReview || model.session.researchCase == nil)
+                Button("Final Quality Review…", action: model.openQualityReview)
+                    .disabled(model.busy || model.evaluatingQuality || model.researchReviewOpen || model.showRequestReview || model.session.researchCase == nil)
                 Button("Sections and Reviews…", action: model.openResearchSections)
-                    .disabled(model.busy || model.showRequestReview || model.session.researchCase == nil)
+                    .disabled(model.busy || model.evaluatingQuality || model.researchReviewOpen || model.showRequestReview || model.session.researchCase == nil)
                 Button("Inspect Case Coverage", action: model.inspectResearchCase)
-                    .disabled(model.session.researchCase == nil)
+                    .disabled(model.busy || model.evaluatingQuality || model.researchReviewOpen || model.showRequestReview || model.session.researchCase == nil)
                 Button("Build Document from Sources…", action: model.prepareResearchDocument)
                     .disabled(model.busy || model.running || model.showRequestReview)
                 Button("Review Document…", action: model.reviewDocumentCheck)
@@ -167,6 +169,7 @@ struct WorkbenchView: View {
             Button("Cancel",role:.cancel){model.pendingCloseTab=nil}
         }message:{Text("Save or discard \(model.pendingCloseTab ?? "this file"). Discard keeps a recovery checkpoint and does not change the project file.")}
         .alert("Workbench",isPresented:Binding(get:{model.error != nil},set:{if !$0{model.error=nil}})){Button("OK"){model.error=nil}}message:{Text(model.error ?? "")}
+        .sheet(isPresented:$model.showQualityReview) { ResearchQualityView(model: model) }
         .sheet(isPresented:$model.showResearchSections) { ResearchSectionsView(model: model) }
         .sheet(isPresented:$model.showSourceCoverage) { if let state = model.session.researchCase { ResearchCoverageView(model: model, state: state) } }
         .sheet(isPresented:$model.showRequestReview){VStack(alignment:.leading,spacing:12){Text("Review the exact model request").font(.title2);Text("Destination: local Ollama / Model: \(model.pendingModel) / \(model.maskingCount) masking replacements").font(.caption);Text("Context: \(model.pendingContext) tokens / answer ceiling: \(OllamaClient.responseTokenLimit(context:model.pendingContext,inputEstimate:model.pendingPacket?.estimatedTokens ?? 0)) tokens").font(.caption);Text("Original transcript remains local. This frozen preview is what will be sent. Pattern matching cannot find every sensitive value. Image pixels are not redacted by text masking.").font(.caption);HStack{ForEach(model.pendingImages,id:\.self){encoded in if let data=Data(base64Encoded:encoded),let image=NSImage(data:data){Image(nsImage:image).resizable().scaledToFit().frame(width:200,height:120)}}};ScrollView{Text(model.requestPreview).font(.system(size:12,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)};HStack{Button("Cancel",action:model.cancelRequestReview);Spacer();Button("Send Reviewed Request",action:model.sendReviewedRequest).buttonStyle(.borderedProminent)}}.padding(22).frame(width:850,height:650)}

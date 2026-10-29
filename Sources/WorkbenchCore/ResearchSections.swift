@@ -17,8 +17,12 @@ public struct SectionModelProvenance: Codable, Equatable, Sendable {
     public let model: String
     public let modelDigest: String?
     public let requestID: String
-    public init(model: String, modelDigest: String? = nil, requestID: String) {
+    public let requestSHA256: String?
+    public let responseSHA256: String?
+    public let bindingSHA256: String?
+    public init(model: String, modelDigest: String? = nil, requestID: String, requestSHA256: String? = nil, responseSHA256: String? = nil, bindingSHA256: String? = nil) {
         self.model = model; self.modelDigest = modelDigest; self.requestID = requestID
+        self.requestSHA256 = requestSHA256; self.responseSHA256 = responseSHA256; self.bindingSHA256 = bindingSHA256
     }
 }
 

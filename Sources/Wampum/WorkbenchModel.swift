@@ -29,6 +29,12 @@ import WorkbenchCore
     @Published var showNetworkConfirmation=false
     @Published var pendingNetworkCommand=""
     @Published var privacy=PrivacySettings()
+    @Published var showQualityReview = false
+    @Published var evaluatingQuality = false
+    @Published var qualityEvaluation: ResearchRelease.Evaluation?
+    @Published var qualityDocumentPreview = ""
+    @Published var qualityWorkflowHash: String?
+    @Published var qualityIssue: String?
     @Published var showResearchSections=false
     var preparingSectionRequest: ResearchSectionRequest?
     var pendingSectionRequest: ResearchSectionRequest?
@@ -118,7 +124,7 @@ import WorkbenchCore
         } catch {self.error=error.localizedDescription}
     }
     func switchScenario(_ id:String?) {
-        guard !busy,!running,!showRequestReview,!showProposal,!showDocumentReview,!probing,!browser.connected,!browser.busy,!browser.disconnecting,!controller.enabled else {error="Disconnect the browser and finish or cancel the active request, check, or review before switching scenarios.";return}
+        guard !evaluatingQuality,!busy,!running,!showRequestReview,!showProposal,!showDocumentReview,!probing,!browser.connected,!browser.busy,!browser.disconnecting,!controller.enabled else {error="Disconnect the browser and finish or cancel the active request, check, or review before switching scenarios.";return}
         guard !persistenceBlocked else {error="Repair session storage before switching scenarios.";return}
         do {
             let scenarios=ScenarioStore(directory:store.directory)
@@ -308,6 +314,7 @@ import WorkbenchCore
         } catch{self.error=error.localizedDescription}
     }
     func send() {
+        guard !evaluatingQuality else { error = "Finish the active quality review before sending a request."; return }
         let sectionRequest = preparingSectionRequest; preparingSectionRequest = nil
         pendingSectionRequest = nil
         guard !privacyBlocked else{error="Privacy settings need repair before sending.";return}
