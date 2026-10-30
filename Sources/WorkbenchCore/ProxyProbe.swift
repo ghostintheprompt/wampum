@@ -34,10 +34,13 @@ public actor ProxyProbeClient {
     private var used:Set<UUID>=[]
     private let guardrail:NetworkGuard
     public init(guardrail:NetworkGuard){self.guardrail=guardrail}
-    public func performApproved(_ review:ProxyProbeReview)async throws->String {
+    public func performApproved(_ review:ProxyProbeReview,scope:AuthorizedScope)async throws->String {
         guard used.insert(review.id).inserted else{throw WorkbenchError.invalid("This approval has already been used. Prepare a new request.")}
         let destination="https://\(review.url.host!):\(review.url.port ?? 443)"
-        try await guardrail.record(component:"Approved proxy probe",destination:destination,decision:"PROXY_HEAD_APPROVED_ONCE",detail:"via \(review.proxy.description); no direct fallback; no project context attached")
+        // Phase 1 scope gate: a probe is always outward, so the host must be operator-authorized.
+        do {_=try scope.authorize(review.url)}
+        catch {try? await guardrail.record(component:"Approved proxy probe",destination:destination,decision:"SCOPE_BLOCKED",detail:(error as? WorkbenchError)?.errorDescription ?? "outside authorized scope");throw error}
+        try await guardrail.record(component:"Approved proxy probe",destination:destination,decision:"PROXY_HEAD_APPROVED_ONCE",detail:"via \(review.proxy.description); host in authorized scope; no direct fallback; no project context attached")
         let configuration=URLSessionConfiguration.ephemeral
         configuration.proxyConfigurations=[review.proxy.configuration()]
         configuration.httpShouldSetCookies=false;configuration.httpCookieStorage=nil;configuration.urlCredentialStorage=nil;configuration.urlCache=nil;configuration.requestCachePolicy = .reloadIgnoringLocalCacheData

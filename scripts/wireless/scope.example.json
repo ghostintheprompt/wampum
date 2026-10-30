@@ -1,0 +1,10 @@
+{
+  "engagement_id": "example-engagement-2026-11",
+  "operator": "MDRN Red Team Sec",
+  "authorization": "Written rules of engagement on file; capture limited to the BSSIDs below. For lab building, these are devices I own.",
+  "duration_seconds": 300,
+  "targets": [
+    { "bssid": "AA:BB:CC:DD:EE:FF", "channel": 36, "essid": "ExampleCorp-5G" },
+    { "bssid": "11:22:33:44:55:66", "channel": 6, "essid": "ExampleCorp-Guest" }
+  ]
+}

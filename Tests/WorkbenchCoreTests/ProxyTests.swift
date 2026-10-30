@@ -22,10 +22,25 @@ final class ProxyTests:XCTestCase {
         var first=Data();while !first.contains(10){guard let b=try pipe.fileHandleForReading.read(upToCount:1),!b.isEmpty else{throw WorkbenchError.invalid("Proxy fixture failed")};first.append(b)}
         let port=String(decoding:first,as:UTF8.self).trimmingCharacters(in:.whitespacesAndNewlines)
         let guardrail=NetworkGuard(directory:directory);let client=ProxyProbeClient(guardrail:guardrail);let review=try ProxyProbeReview(urlString:"https://fixture.invalid/inspect?token=PRIVATE",proxyString:"http://127.0.0.1:\(port)")
-        do{_=try await client.performApproved(review);XCTFail("Rejecting proxy must fail")}catch{}
+        do{_=try await client.performApproved(review,scope:AuthorizedScope(["fixture.invalid"]));XCTFail("Rejecting proxy must fail")}catch{}
         try await waitForFixture(server);let request=String(decoding:pipe.fileHandleForReading.readDataToEndOfFile(),as:UTF8.self);XCTAssertTrue(request.contains("CONNECT fixture.invalid:443"),request);XCTAssertFalse(request.contains("PRIVATE"))
-        do{_=try await client.performApproved(review);XCTFail("Approval reused")}catch{XCTAssertTrue(error.localizedDescription.contains("already been used"))}
+        do{_=try await client.performApproved(review,scope:AuthorizedScope(["fixture.invalid"]));XCTFail("Approval reused")}catch{XCTAssertTrue(error.localizedDescription.contains("already been used"))}
         let records=try await guardrail.recent();XCTAssertTrue(records.contains{$0.decision=="PROXY_REQUEST_FAILED"});XCTAssertFalse(records.contains{$0.destination.contains("PRIVATE")})
+    }
+    func testProbeFailsClosedWhenDestinationOutOfScope()async throws{
+        let directory=FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString);defer{try? FileManager.default.removeItem(at:directory)}
+        let guardrail=NetworkGuard(directory:directory);let client=ProxyProbeClient(guardrail:guardrail)
+        // Distinct reviews: a single-use approval is consumed per call, so reuse would
+        // otherwise mask the scope decision under the "already used" guard.
+        let urlString="https://out.example.test/inspect?token=PRIVATE"
+        // Empty scope authorizes nothing.
+        do{_=try await client.performApproved(try ProxyProbeReview(urlString:urlString,proxyString:"http://127.0.0.1:8080"),scope:AuthorizedScope([]));XCTFail("Empty scope must block")}catch{XCTAssertTrue(error.localizedDescription.contains("No authorized scope"),error.localizedDescription)}
+        // A declared scope that does not cover the host still blocks before any network use.
+        do{_=try await client.performApproved(try ProxyProbeReview(urlString:urlString,proxyString:"http://127.0.0.1:8080"),scope:AuthorizedScope(["other.example.test"]));XCTFail("Out-of-scope host must block")}catch{XCTAssertTrue(error.localizedDescription.contains("outside the case's authorized scope"),error.localizedDescription)}
+        let records=try await guardrail.recent()
+        XCTAssertEqual(records.filter{$0.decision=="SCOPE_BLOCKED"}.count,2)
+        XCTAssertFalse(records.contains{$0.decision=="PROXY_HEAD_APPROVED_ONCE"})
+        XCTAssertFalse(records.contains{$0.destination.contains("PRIVATE") || $0.destination.contains("inspect")})
     }
     func testRealSOCKSHandshakeUsesDestinationName()async throws{
         let script = #"""
@@ -50,7 +65,7 @@ c.sendall(bytes([5,4,0,1,0,0,0,0,0,0]));c.close();s.close()
         var first=Data();while !first.contains(10){guard let b=try pipe.fileHandleForReading.read(upToCount:1),!b.isEmpty else{throw WorkbenchError.invalid("SOCKS fixture failed")};first.append(b)}
         let port=String(decoding:first,as:UTF8.self).trimmingCharacters(in:.whitespacesAndNewlines)
         let client=ProxyProbeClient(guardrail:NetworkGuard());let review=try ProxyProbeReview(urlString:"https://fixture.invalid/",proxyString:"socks5://127.0.0.1:\(port)")
-        do{_=try await client.performApproved(review);XCTFail("Rejecting SOCKS proxy must fail")}catch{}
+        do{_=try await client.performApproved(review,scope:AuthorizedScope(["fixture.invalid"]));XCTFail("Rejecting SOCKS proxy must fail")}catch{}
         try await waitForFixture(p);let output=String(decoding:pipe.fileHandleForReading.readDataToEndOfFile(),as:UTF8.self);XCTAssertTrue(output.contains("SOCKS fixture.invalid:443"),output)
     }
 

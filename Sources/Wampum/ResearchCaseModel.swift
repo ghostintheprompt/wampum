@@ -9,8 +9,9 @@ extension WorkbenchModel {
         do {
             let contract = try JSONDecoder().decode(ResearchCaseContract.self, from: boundedResearchData(url))
             let state = try ResearchCaseState(contract: contract)
+            let scopeLine = contract.authorizedScope.isEmpty ? "Authorized outward scope: none (outward browser/probe actions are blocked)." : "Authorized outward scope: \(contract.authorizedScope.joined(separator: ", "))"
             let alert = NSAlert(); alert.messageText = "Use case \(contract.id)?"
-            alert.informativeText = "\(contract.objective)\n\nRequired units: \(contract.requiredUnits.joined(separator: ", "))\n\nThe current session will be checkpointed. Conversation, notes, scope, attachments and document review state will be cleared to prevent cross-case carryover. Editor files remain on disk."
+            alert.informativeText = "\(contract.objective)\n\nRequired units: \(contract.requiredUnits.joined(separator: ", "))\n\n\(scopeLine)\n\nThe current session will be checkpointed. Conversation, notes, scope, attachments and document review state will be cleared to prevent cross-case carryover. Editor files remain on disk."
             alert.addButton(withTitle: "Use Case"); alert.addButton(withTitle: "Cancel")
             guard alert.runModal() == .alertFirstButtonReturn else { return }
             try replaceResearchCase(state); status = "Research case imported. Previous context checkpointed; no model request sent."

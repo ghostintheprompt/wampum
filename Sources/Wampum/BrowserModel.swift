@@ -44,6 +44,10 @@ import WorkbenchCore
     private var gate=BrowserRetryGate()
     private var runDirectory:URL?
     private var scopeID="general"
+    // Phase 1 bug-bounty gate: the operator-authorized outward scope bound when the
+    // browser connects, plus the contract digest it came from for drift detection.
+    private var authorizedScope=AuthorizedScope([])
+    private var scopeContractHash:String?
     private var rejectionStorageFailed=false
     private var planningTask:Task<Void,Never>?
     let connection=MCPConnection()
@@ -97,7 +101,7 @@ import WorkbenchCore
     }
     @discardableResult private func saveGate()->Bool {do{try JSONEncoder().encode(gate).write(to:gateURL,options:.atomic);try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:gateURL.path);rejectionStorageFailed=false;return true}catch{rejectionStorageFailed=true;diagnostics="Rejection history could not be saved: "+error.localizedDescription;return false}}
     func resetRejections(){guard !busy,!capturing,!receiptStorageFailed else{return};let previous=gate;gate.resetRejections();guard saveGate() else{gate=previous;return};do{for index in receipts.indices where receipts[index].execution == .unknown {receipts[index].acknowledged=true};try BrowserReceiptStore(root:directory,scope:scopeID).save(receipts)}catch{receiptStorageFailed=true;diagnostics=error.localizedDescription;return};record("Operator reset rejected requests after changing conditions.");status="Rejected requests reset. Refresh the page before a new proposal."}
-    func requestConnect(scenario:String?){scopeID=scenario ?? "general";loadReceipts();if localOnly {connect()}else{showExternalWarning=true}}
+    func requestConnect(scenario:String?,authorizedScope:AuthorizedScope=AuthorizedScope([]),contractHash:String?=nil){scopeID=scenario ?? "general";self.authorizedScope=authorizedScope;self.scopeContractHash=contractHash;loadReceipts();if localOnly {connect()}else{showExternalWarning=true}}
     func connect(){
         guard !connected,!busy,!disconnecting else{return};showExternalWarning=false;busy=true
         Task {defer{busy=false}
@@ -141,8 +145,22 @@ import WorkbenchCore
         if call.name=="browser_navigate" {
             guard let raw=call.arguments["url"]?.string,let url=URL(string:raw),["http","https"].contains(url.scheme?.lowercased() ?? ""),url.host != nil,url.user == nil,url.password == nil else{throw WorkbenchError.invalid("Navigate using HTTP(S) without embedded credentials.")}
             if localOnly && !NetworkGuard.isLoopback(url){throw WorkbenchError.invalid("This browser connection is local only. Disconnect and explicitly approve external network to change that.")}
+            try authorizeNavigation(url)
         }
         try gate.check(call)
+    }
+    /// Phase 1 scope gate. Loopback is the local-fixture path and is allowed; any other
+    /// host must match the case's operator-authorized scope, fail-closed. Every decision
+    /// is recorded to the network-events ledger (host only, never path or query).
+    private func authorizeNavigation(_ url:URL)throws {
+        if NetworkGuard.isLoopback(url){logScope(url:url,decision:"SCOPE_LOOPBACK",detail:"loopback target; local fixture path");return}
+        do {let host=try authorizedScope.authorize(url);logScope(url:url,decision:"SCOPE_ALLOWED",detail:"host \(host) authorized by case contract")}
+        catch {logScope(url:url,decision:"SCOPE_BLOCKED",detail:(error as? WorkbenchError)?.errorDescription ?? "blocked");throw error}
+    }
+    private func logScope(url:URL,decision:String,detail:String){
+        let destination="\(url.scheme ?? "http")://\(url.host ?? "unknown"):\(url.port ?? (url.scheme == "https" ? 443 : 80))"
+        let guardrail=self.guardrail
+        Task{try? await guardrail.record(component:"Browser scope gate",destination:destination,decision:decision,detail:detail)}
     }
     func reject(_ call:BrowserCall,reason:String,model:WorkbenchModel?=nil){
         gate.reject(call,reason:reason);saveGate();diagnostics=reason;record("REJECTED "+call.name+": "+reason)
@@ -194,6 +212,11 @@ import WorkbenchCore
         proposedFingerprint=nil;proposedRequestSHA256=nil;proposedPage=nil
         do {
             try validate(call)
+            if let model {
+                let current=AuthorizedScope(model.session.researchCase?.contract.authorizedScope ?? [])
+                let currentHash=try? model.session.researchCase?.contract.digest()
+                guard current==authorizedScope,currentHash==scopeContractHash else{throw WorkbenchError.invalid("The case's authorized scope changed since the browser connected. Disconnect and reconnect to rebind scope before any outward action.")}
+            }
             try gate.authorizeExecution(call,scopeID:scopeID,requiresApproval:linkedProposal || controllerID != nil,approval:approval,contextSHA256:executionContextSHA256(model:model))
             if approval != nil {
                 guard saveGate() else{throw WorkbenchError.invalid("Approval consumption could not be saved; no tool call sent.")}

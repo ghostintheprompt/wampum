@@ -50,4 +50,13 @@ public struct CommandPlan {
         guard FileManager.default.isExecutableFile(atPath:"/usr/bin/sandbox-exec") else{throw WorkbenchError.invalid("Local command guard is unavailable. Command was not run.")}
         return CommandPlan(executable:URL(fileURLWithPath:"/usr/bin/sandbox-exec"),arguments:["-p",loopbackProfile,"/bin/zsh","-c",command],networkDecision:"DIRECT_SOCKETS_LOOPBACK_ONLY")
     }
+    /// A direct owned-process invocation of an external tool binary (argv, no shell, no
+    /// sandbox wrapping). Used for tools whose network cannot be meaningfully contained by
+    /// wrapping the client process (e.g. the Docker client, whose daemon spawns containers);
+    /// containment there is the scope gate, operator approval and receipt, not sandbox-exec.
+    public static func ownedTool(executable:URL,arguments:[String])throws->CommandPlan {
+        guard FileManager.default.isExecutableFile(atPath:executable.path) else{throw WorkbenchError.invalid("Tool executable not found: \(executable.path)")}
+        for argument in arguments where argument.contains("\0"){throw WorkbenchError.invalid("Tool argument contains a null byte.")}
+        return CommandPlan(executable:executable,arguments:arguments,networkDecision:"EXTERNAL_TOOL_DIRECT")
+    }
 }

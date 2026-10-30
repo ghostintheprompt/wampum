@@ -29,7 +29,7 @@ struct BrowserPanel:View {
                 Button("Go",action:browser.navigate).disabled(!browser.connected || browser.busy || browser.capturing)
                 Button("Browser Check",action:browser.loadSelfCheck).disabled(!browser.connected || browser.busy || browser.capturing)
                 if browser.connected {Button("Disconnect",action:browser.disconnect)}
-                else {Button("Connect"){browser.requestConnect(scenario:model.session.lab?.id)}.disabled(browser.busy || browser.disconnecting)}
+                else {Button("Connect"){browser.requestConnect(scenario:model.session.lab?.id,authorizedScope:AuthorizedScope(model.session.researchCase?.contract.authorizedScope ?? []),contractHash:try? model.session.researchCase?.contract.digest())}.disabled(browser.busy || browser.disconnecting)}
             }
             if !browser.connected {
                 Toggle("Local browser connections only",isOn:$browser.localOnly).disabled(browser.busy)

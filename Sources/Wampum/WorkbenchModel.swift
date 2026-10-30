@@ -36,6 +36,29 @@ import WorkbenchCore
     @Published var qualityWorkflowHash: String?
     @Published var qualityIssue: String?
     @Published var findingGate: FindingGate.Verdict?
+    @Published var findingVerdict: FindingVerification.Verdict?
+    @Published var toolReceipts:[ToolReceipt]=[]
+    @Published var dockerPath=""
+    @Published var toolStatus="No external tool invoked."
+    @Published var burpBase="http://127.0.0.1:1337"
+    @Published var burpAPIKey=""
+    var pendingDockerPlan:DockerControl.Plan?
+    @Published var showDockerConfirmation=false
+    // Wireless (UTM/Kali) capture controller state.
+    @Published var wirelessVM="Kali"
+    @Published var wirelessAdapter="0BDA:8812"
+    @Published var wirelessOperator="MDRN Red Team Sec"
+    @Published var wirelessAuthorization=""
+    @Published var captureDuration=30
+    @Published var wirelessSelectedBSSIDs:[String]=[]
+    @Published var wirelessStatus="No wireless capture run."
+    @Published var wirelessBusy=false
+    // SSH fallback (used when the guest lacks the QEMU guest agent).
+    @Published var wirelessUseSSH=false
+    @Published var sshHost="127.0.0.1"
+    @Published var sshPort=22
+    @Published var sshUser="kali"
+    @Published var sshIdentity=""
     @Published var showResearchSections=false
     var preparingSectionRequest: ResearchSectionRequest?
     var pendingSectionRequest: ResearchSectionRequest?
@@ -82,6 +105,8 @@ import WorkbenchCore
         catch { fatalError("Cannot initialize local workbench: \(error)") }
         browser=BrowserModel(directory:directory,guardrail:networkGuard)
         controller=ControllerModel(directory:directory)
+        dockerPath=DockerControl.detect()?.path ?? ""
+        do { toolReceipts = try ToolReceiptStore(root:directory).load() } catch { toolReceipts = [] }
         integrity=IntegrityModel(directory:directory,initialBaseline:ProcessInfo.processInfo.environment["WAMPUM_INTEGRITY_BASELINE"].map{URL(fileURLWithPath:$0)})
         do { session = try store.load(); refreshFiles() }
         catch {
@@ -410,7 +435,184 @@ import WorkbenchCore
     func cancelProxyProbe(){pendingProbe=nil;showProbeReview=false}
     func approveProxyProbe(){
         guard !probing,let review=pendingProbe else{return};pendingProbe=nil;showProbeReview=false;probing=true
-        Task{defer{probing=false;refreshNetwork()};do{probeOutput=try await probeClient.performApproved(review)}catch{probeOutput=error.localizedDescription}}
+        let scope=AuthorizedScope(session.researchCase?.contract.authorizedScope ?? [])
+        Task{defer{probing=false;refreshNetwork()};do{probeOutput=try await probeClient.performApproved(review,scope:scope)}catch{probeOutput=error.localizedDescription}}
+    }
+    /// Phase 2: decide whether an evidence-ledger claim has earned Finding status, or is
+    /// still a Hypothesis. Reads the current on-disk evidence; nothing is mutated here.
+    func verifyFinding(factID:String){
+        guard let state=session.researchCase else{findingVerdict=nil;error="No research case with an evidence ledger is active.";return}
+        do{
+            let hash=try state.contract.digest()
+            findingVerdict=try FindingVerification.verify(factID:factID,ledger:state.ledger,caseID:state.contract.id,contractHash:hash)
+            status=findingVerdict?.summary ?? status
+        }catch{findingVerdict=nil;self.error=error.localizedDescription}
+    }
+
+    // MARK: - External pen-test tools (Docker, Burp) — scope-gated, operator-reviewed, receipted.
+
+    private var engagementScope:AuthorizedScope { AuthorizedScope(session.researchCase?.contract.authorizedScope ?? []) }
+
+    private func recordToolReceipt(_ receipt:ToolReceipt){
+        var updated=toolReceipts
+        if let index=updated.firstIndex(where:{$0.id==receipt.id}){updated[index]=receipt}else{updated.append(receipt)}
+        if updated.count>200{updated.removeFirst(updated.count-200)}
+        do{try ToolReceiptStore(root:store.directory).save(updated);toolReceipts=updated}
+        catch{self.error="Tool receipt could not be saved: "+error.localizedDescription}
+    }
+
+    /// Build and scope-gate a docker invocation, then freeze it for explicit operator review.
+    /// Nothing runs until `allowDockerRun`. Network-capable subcommands need an in-scope target.
+    func prepareDockerRun(subcommand:String,arguments:[String],targets:[String]){
+        guard !running,!busy else{toolStatus="Finish the active run before issuing a tool command.";return}
+        guard let executable=DockerControl.detect() else{dockerPath="";self.error="Docker CLI not found. Install Docker or set its path; Wampum does not install it.";return}
+        dockerPath=executable.path
+        do{
+            pendingDockerPlan=try DockerControl.plan(executable:executable,subcommand:subcommand,arguments:arguments,targets:targets,scope:engagementScope)
+            showDockerConfirmation=true
+        }catch{pendingDockerPlan=nil;self.error=error.localizedDescription;toolStatus="Docker command blocked; nothing was run."}
+    }
+    func cancelDockerRun(){pendingDockerPlan=nil;showDockerConfirmation=false}
+    func allowDockerRun(){
+        guard let plan=pendingDockerPlan,!running else{return}
+        pendingDockerPlan=nil;showDockerConfirmation=false
+        var receipt=plan.receipt
+        let folder=workspace?.root ?? URL(fileURLWithPath:session.project.isEmpty ? FileManager.default.currentDirectoryPath:session.project)
+        let log=store.directory.appendingPathComponent("tool-receipts").appendingPathComponent("docker-"+receipt.id.uuidString+".log")
+        do{try FileManager.default.createDirectory(at:log.deletingLastPathComponent(),withIntermediateDirectories:true,attributes:[.posixPermissions:0o700]);FileManager.default.createFile(atPath:log.path,contents:nil,attributes:[.posixPermissions:0o600])}catch{self.error=error.localizedDescription;return}
+        running=true;toolStatus="Running docker "+receipt.action;output="$ "+([plan.executable.path]+plan.arguments).joined(separator:" ")+"\n"
+        Task{try? await networkGuard.record(component:"Docker",destination:receipt.targets.joined(separator:", ").isEmpty ? "local docker action":receipt.targets.joined(separator:", "),decision:"TOOL_DOCKER_APPROVED",detail:"operator-reviewed; "+receipt.detail);refreshNetwork()}
+        do{
+            let command=try CommandPlan.ownedTool(executable:plan.executable,arguments:plan.arguments)
+            let started=receipt
+            process=try OwnedCommand(plan:command,directory:folder,log:log){ [weak self] exitCode,cancelled in
+                let data=(try? Data(contentsOf:log,options:.mappedIfSafe)) ?? Data()
+                let text=String(decoding:data.prefix(131072),as:UTF8.self)
+                Task{@MainActor in
+                    guard let self else{return}
+                    self.running=false;self.process=nil;self.output=self.output+text+"\nExit: \(exitCode)"
+                    var done=started;done.outcome=cancelled ? .failed:(exitCode==0 ? .succeeded:.failed);done.detail=started.detail+" Exit \(exitCode)."+(cancelled ? " Stopped.":"");done.resultSHA256=ToolReceipt.hash(text)
+                    self.recordToolReceipt(done);self.toolStatus="docker \(done.action): \(done.outcome.rawValue) (exit \(exitCode))."
+                }
+            }
+        }catch{running=false;process=nil;receipt.outcome = .failed;receipt.detail=error.localizedDescription;recordToolReceipt(receipt);self.error=error.localizedDescription;toolStatus="docker launch failed."}
+    }
+
+    /// Submit a scope-gated Burp scan. Every target host is authorized against the RoE scope
+    /// and mirrored into Burp's scan scope before anything is sent. Loopback-only, no redirects.
+    func burpScan(urls:[String]){
+        guard !busy else{return}
+        let scope=engagementScope
+        let base=burpBase;let key=burpAPIKey.isEmpty ? nil:burpAPIKey
+        toolStatus="Submitting Burp scan…"
+        Task{
+            do{
+                let client=try BurpClient(base:URL(string:base) ?? URL(string:"http://127.0.0.1:1337")!,apiKey:key,guardrail:networkGuard)
+                let receipt=try await client.startScan(urls:urls,scope:scope)
+                recordToolReceipt(receipt);toolStatus="Burp: "+receipt.detail;refreshNetwork()
+            }catch{self.error=error.localizedDescription;toolStatus="Burp scan blocked or failed; see error."}
+        }
+    }
+
+    private func wirelessScriptURL() -> URL {
+        if let bundled = Bundle.main.resourceURL?.appendingPathComponent("wampum-wifi-capture.sh"), FileManager.default.fileExists(atPath: bundled.path) { return bundled }
+        return URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("scripts/wireless/wampum-wifi-capture.sh")
+    }
+
+    /// Orchestrate a wireless capture in the UTM guest and pin the verified results as evidence.
+    /// Scope-gated end to end: the guest scope.json only carries in-scope BSSIDs, and every
+    /// returned manifest is re-checked against the case's wireless scope before anything is pinned.
+    func runWirelessCapture() {
+        guard !busy, !wirelessBusy else { return }
+        guard let activeState = session.researchCase else { error = "No research case. Import a contract with a wireless scope first."; return }
+        let scope = activeState.contract.wireless
+        guard !scope.isEmpty else { error = "This case has no wireless scope (RF rules of engagement). Add authorized BSSIDs to the contract."; return }
+        guard !wirelessAuthorization.trimmingCharacters(in: .whitespaces).isEmpty else { error = "Record the authorization basis (RoE / ownership) before capturing."; return }
+        guard let utmctl = UTMControl.detect() else { error = "utmctl not found. Install UTM."; return }
+        let engagementID = activeState.contract.id
+        let selected = wirelessSelectedBSSIDs.isEmpty ? scope.bssids : wirelessSelectedBSSIDs
+        let scriptURL = wirelessScriptURL()
+        guard let scriptData = try? Data(contentsOf: scriptURL) else { error = "Capture script not found at \(scriptURL.path)."; return }
+        let scopeData: Data
+        do { scopeData = try UTMControl.guestScopeData(engagementID: engagementID, operator: wirelessOperator, authorization: wirelessAuthorization, durationSeconds: captureDuration, scope: scope, select: selected) }
+        catch { self.error = error.localizedDescription; return }
+        let runner = UTMRunner(utmctl: utmctl, vm: wirelessVM)
+        let transport: GuestTransport = wirelessUseSSH
+            ? SSHRunner(host: sshHost, port: sshPort, user: sshUser, identity: sshIdentity.isEmpty ? nil : sshIdentity)
+            : runner
+        let usingSSH = wirelessUseSSH
+        let adapter = wirelessAdapter, duration = captureDuration
+        let outDir = store.directory.appendingPathComponent("wireless-captures").appendingPathComponent(engagementID)
+        let guestScript = "/tmp/wampum-wifi-capture.sh", guestScope = "/tmp/wampum-scope.json", guestOut = "/tmp/wampcap-run"
+        wirelessBusy = true; wirelessStatus = "Starting \(wirelessVM)…"
+        Task { @MainActor in
+            defer { wirelessBusy = false }
+            do {
+                try await runner.start()   // VM lifecycle is always utmctl
+                wirelessStatus = usingSSH ? "Waiting for SSH…" : "Waiting for guest agent…"
+                guard await transport.waitForReady(maxSeconds: 180) else { throw WorkbenchError.invalid("Guest did not respond over \(usingSSH ? "SSH" : "the guest agent"). Check the connection, or install qemu-guest-agent.") }
+                wirelessStatus = "Attaching adapter \(adapter)…"
+                try? await runner.usbConnect(adapter) // USB attach is always utmctl; harmless if already attached
+                wirelessStatus = "Pushing script and RoE scope…"
+                try await transport.push(scriptData, to: guestScript)
+                try await transport.push(scopeData, to: guestScope)
+                wirelessStatus = "Capturing (\(duration)s)… only in-scope BSSIDs."
+                _ = try? await transport.exec("rm -rf \(guestOut); nohup bash \(guestScript) --scope \(guestScope) --out \(guestOut) >/tmp/wampcap.log 2>&1 & echo STARTED", timeout: 10)
+                var manifestData: Data?
+                let deadline = Date().addingTimeInterval(Double(duration) + 90)
+                while Date() < deadline {
+                    try await Task.sleep(nanoseconds: 4_000_000_000)
+                    if let probe = try? await transport.exec("test -f \(guestOut)/manifest.json && echo YES || echo NO", timeout: 8), probe.contains("YES") {
+                        manifestData = try? await transport.pull("\(guestOut)/manifest.json"); if manifestData != nil { break }
+                    }
+                }
+                guard let manifestData else { throw WorkbenchError.invalid("Capture produced no manifest within the time budget.") }
+                let files = try UTMControl.verify(manifest: manifestData, scope: scope, engagementID: engagementID)
+                try FileManager.default.createDirectory(at: outDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+                try manifestData.write(to: outDir.appendingPathComponent("manifest.json"), options: .atomic)
+                var pinned = 0
+                for f in files {
+                    let data = try await transport.pull("\(guestOut)/\(f.path)")
+                    let local = outDir.appendingPathComponent(f.path)
+                    try data.write(to: local, options: .atomic)
+                    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: local.path)
+                    // Verify the pulled bytes match the manifest hash before pinning.
+                    let (digest, bytes) = try IntegrityCheck.hashFile(local.path, limit: 1_073_741_824)
+                    guard digest == f.sha256, bytes == f.bytes else { throw WorkbenchError.invalid("Pulled file \(f.path) does not match the manifest hash; not pinned.") }
+                    // Pin and record only the primary capture (.cap); the .csv is kept alongside.
+                    var target = session.researchCase ?? activeState
+                    let hash = try target.contract.digest()
+                    let pin = try ResearchEvidence.Evidence.pin(id: "wifi-\(engagementID)-\(f.path)", caseID: target.contract.id, contractHash: hash, kind: .hostReceipt, path: local.path)
+                    try target.ledger.addEvidence(pin)
+                    var updated = session; updated.researchCase = target; session = updated
+                    pinned += 1
+                    var receipt = ToolReceipt(tool: "wireless", action: "capture", targets: scope.bssids, argument: f.path, outcome: .succeeded, detail: "Captured \(f.path) (\(f.bytes) bytes), pinned as hostReceipt \(pin.id).")
+                    receipt.resultSHA256 = f.sha256
+                    recordToolReceipt(receipt)
+                }
+                try checkpointSession(); persist()
+                // Best-effort restore of the guest radio to managed mode.
+                _ = try? await transport.exec("ip link set wlan0 down; iw dev wlan0 set type managed; ip link set wlan0 up; systemctl restart NetworkManager", timeout: 12)
+                wirelessStatus = "Capture complete: \(pinned) file(s) pinned as case evidence under \(outDir.lastPathComponent). Approve a claim to promote a Finding."
+            } catch { self.error = error.localizedDescription; wirelessStatus = "Capture failed; see error." }
+        }
+    }
+
+    /// Phase 2 bridge: write a tool receipt to its own evidence file and pin it into the case
+    /// ledger as a hostReceipt, so a Finding can cite it. The ledger still requires an explicit
+    /// operator review to approve the fact — pinning only makes the evidence available.
+    func pinToolReceiptAsEvidence(_ receipt:ToolReceipt){
+        guard var state=session.researchCase else{self.error="No research case is active to attach evidence to.";return}
+        do{
+            let url=try ToolReceiptStore(root:store.directory).writeEvidenceFile(receipt)
+            let hash=try state.contract.digest()
+            let pin=try ResearchEvidence.Evidence.pin(id:"tool-"+receipt.id.uuidString,caseID:state.contract.id,contractHash:hash,kind:.hostReceipt,path:url.path)
+            try state.ledger.addEvidence(pin)
+            try checkpointSession()
+            var target=session;target.researchCase=state;try saveEditorSession(target);session=target
+            toolStatus="Pinned \(receipt.tool) receipt as case evidence (\(pin.id)). Propose and approve a claim to cite it."
+        }catch{self.error=error.localizedDescription}
     }
     func stopGeneration() { inference?.cancel() }
     func stopCheck() { process?.terminate() }

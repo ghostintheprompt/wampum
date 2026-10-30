@@ -18,6 +18,7 @@ codesign --force --sign - "$APP/Contents/MacOS/WampumController"
 cp .build/release/WampumIntegrity "$APP/Contents/MacOS/WampumIntegrity"
 codesign --force --sign - "$APP/Contents/MacOS/WampumIntegrity"
 cp scripts/playwright-stdio.cjs "$APP/Contents/Resources/playwright-stdio.cjs"
+cp scripts/wireless/wampum-wifi-capture.sh "$APP/Contents/Resources/wampum-wifi-capture.sh"
 ICONSET="$PWD/build/Wampum.iconset"
 mkdir -p "$ICONSET"
 for size in 16 32 128 256 512; do

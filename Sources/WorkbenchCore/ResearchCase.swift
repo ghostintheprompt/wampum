@@ -9,10 +9,46 @@ public struct ResearchCaseContract: Codable, Sendable, Equatable {
     public var allowedActions: [String]
     public var requiredUnits: [String]
     public var rubricSHA256: String
-    public init(id: String, objective: String, roles: [String], allowedActions: [String], requiredUnits: [String], rubricSHA256: String) {
+    /// Operator-authorized outward hosts (bug-bounty program scope). Empty means no
+    /// outward target is authorized — Phase 1 scope gating is fail-closed on this field.
+    public var authorizedScope: [String]
+    /// Operator-authorized wireless targets (RF rules of engagement). Empty means no
+    /// wireless capture is authorized — the capture controller is fail-closed on this.
+    public var wirelessScope: [WirelessTarget]
+    public init(id: String, objective: String, roles: [String], allowedActions: [String], requiredUnits: [String], rubricSHA256: String, authorizedScope: [String] = [], wirelessScope: [WirelessTarget] = []) {
         self.id = id; self.objective = objective; self.roles = roles
         self.allowedActions = allowedActions; self.requiredUnits = requiredUnits; self.rubricSHA256 = rubricSHA256
+        self.authorizedScope = authorizedScope; self.wirelessScope = wirelessScope
     }
+    private enum CodingKeys: String, CodingKey { case id, objective, roles, allowedActions, requiredUnits, rubricSHA256, authorizedScope, wirelessScope }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        objective = try c.decode(String.self, forKey: .objective)
+        roles = try c.decode([String].self, forKey: .roles)
+        allowedActions = try c.decode([String].self, forKey: .allowedActions)
+        requiredUnits = try c.decode([String].self, forKey: .requiredUnits)
+        rubricSHA256 = try c.decode(String.self, forKey: .rubricSHA256)
+        // Backward compatible: legacy contracts without the keys decode to empty scopes.
+        authorizedScope = try c.decodeIfPresent([String].self, forKey: .authorizedScope) ?? []
+        wirelessScope = try c.decodeIfPresent([WirelessTarget].self, forKey: .wirelessScope) ?? []
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(objective, forKey: .objective)
+        try c.encode(roles, forKey: .roles)
+        try c.encode(allowedActions, forKey: .allowedActions)
+        try c.encode(requiredUnits, forKey: .requiredUnits)
+        try c.encode(rubricSHA256, forKey: .rubricSHA256)
+        // Omit when empty so legacy contract digests and ledger bindings stay stable.
+        if !authorizedScope.isEmpty { try c.encode(authorizedScope, forKey: .authorizedScope) }
+        if !wirelessScope.isEmpty { try c.encode(wirelessScope, forKey: .wirelessScope) }
+    }
+    /// The parsed, fail-closed authorization boundary built from `authorizedScope`.
+    public var scope: AuthorizedScope { AuthorizedScope(authorizedScope) }
+    /// The parsed, fail-closed RF rules of engagement built from `wirelessScope`.
+    public var wireless: WirelessScope { WirelessScope(wirelessScope) }
     public func validate() throws {
         guard !id.isEmpty, id.utf8.count <= 128, !objective.isEmpty,
               !roles.isEmpty, !allowedActions.isEmpty, !requiredUnits.isEmpty,
@@ -21,6 +57,11 @@ public struct ResearchCaseContract: Codable, Sendable, Equatable {
               rubricSHA256.count == 64, rubricSHA256.allSatisfy({ "0123456789abcdef".contains($0) }) else {
             throw WorkbenchError.invalid("Case needs an objective, roles, allowed actions, unique required units and a rubric hash.")
         }
+        guard authorizedScope.count <= 200 else { throw WorkbenchError.invalid("Case contract exceeds its authorized-scope limit.") }
+        for entry in authorizedScope where !AuthorizedScope.isValidEntry(AuthorizedScope.normalize(entry)) {
+            throw WorkbenchError.invalid("Authorized scope entry is not a valid in-scope host or wildcard: \(entry)")
+        }
+        try WirelessScope(wirelessScope).validate()
         guard try encoded().count <= 16_384 else { throw WorkbenchError.invalid("Case contract exceeds its size limit.") }
     }
     private func encoded() throws -> Data {
