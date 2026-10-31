@@ -11,5 +11,5 @@ build/
 # Private local sessions and model research receipts
 /private/
 
-__pycache__/
-*.pyc
+# Private agent handoff entry point
+/CLAUDE.md

@@ -50,6 +50,10 @@ public struct ToolReceipt: Codable, Identifiable, Sendable {
     public var outcome: Outcome
     public var detail: String
     public var resultSHA256: String?
+    /// The engagement (case id) this receipt belongs to, stamped when recorded. Legacy receipts
+    /// written before per-engagement binding decode as nil ("unscoped") and stay visible as such;
+    /// the operator view scopes receipts to the active engagement so client data does not mix.
+    public var engagement: String?
     public init(tool: String, action: String, targets: [String], argument: String, outcome: Outcome = .planned, detail: String = "") {
         id = UUID(); at = Date(); self.tool = tool; self.action = action; self.targets = targets
         argumentSHA256 = ToolReceipt.hash(argument); self.outcome = outcome; self.detail = detail

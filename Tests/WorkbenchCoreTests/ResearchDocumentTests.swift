@@ -55,10 +55,10 @@ final class ResearchDocumentTests:XCTestCase {
         let manifest=try JSONSerialization.data(withJSONObject:object,options:[.sortedKeys]);try manifest.write(to:root.appendingPathComponent("manifest.json"))
         let program="""
         import unittest
-
+        
         def can_read(user,record):
             return user['tenant']==record['tenant'] and user['id']==record['owner']
-
+        
         class AccessTests(unittest.TestCase):
             def test_same_tenant_owner(self):
                 self.assertTrue(can_read({'tenant':'A','id':7},{'tenant':'A','owner':7}))
@@ -66,7 +66,7 @@ final class ResearchDocumentTests:XCTestCase {
                 self.assertFalse(can_read({'tenant':'A','id':7},{'tenant':'B','owner':7}))
             def test_other_owner(self):
                 self.assertFalse(can_read({'tenant':'A','id':7},{'tenant':'A','owner':8}))
-
+        
         if __name__=='__main__':
             unittest.main()
         """+"\n"

@@ -54,14 +54,27 @@ extension WorkbenchModel {
             session.researchCase = state; persist(); status = "Source captured; no facts automatically approved."
         } catch { self.error = error.localizedDescription }
     }
+    /// Import-side separation guard: decode an evidence ledger and REFUSE, with a clear message,
+    /// one that belongs to a different engagement, so one client's memory can never be pulled into
+    /// another's case. The caseID check runs before `approvedMemory` (which also binds caseID +
+    /// contractHash) so the operator sees a plain reason, not a generic validation failure.
+    func reviewImportedLedger(_ data: Data) throws -> (ResearchEvidence.Ledger, ResearchEvidence.Memory) {
+        guard let state = session.researchCase else { throw WorkbenchError.invalid("No active engagement to import into.") }
+        let ledger = try JSONDecoder().decode(ResearchEvidence.Ledger.self, from: data)
+        guard ledger.caseID == state.contract.id else {
+            throw WorkbenchError.invalid("This evidence ledger belongs to engagement '\(ledger.caseID)', not the active engagement '\(state.contract.id)'. Switch to that engagement, or import the matching ledger — cross-engagement import is refused.")
+        }
+        let memory = try ledger.approvedMemory(caseID: state.contract.id, contractHash: state.contract.digest())
+        return (ledger, memory)
+    }
+
     func importResearchLedger() {
         guard var state = session.researchCase else { return }
         let panel = NSOpenPanel(); panel.canChooseDirectories = false
         panel.message = "Review a case-bound evidence ledger JSON. This replaces approved memory only after explicit review."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            let ledger = try JSONDecoder().decode(ResearchEvidence.Ledger.self, from: boundedResearchData(url))
-            let memory = try ledger.approvedMemory(caseID: state.contract.id, contractHash: state.contract.digest())
+            let (ledger, memory) = try reviewImportedLedger(boundedResearchData(url))
             let alert = NSAlert(); alert.messageText = "Use these reviewed memory records?"
             alert.informativeText = memory.facts.map { "[\($0.meaning.rawValue)] \($0.content)" }.joined(separator: "\n\n") + "\n\nThese are local review records, not authenticated proof of execution. Sources and hashes were rechecked."
             alert.addButton(withTitle: "Use Reviewed Records"); alert.addButton(withTitle: "Cancel")

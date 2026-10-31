@@ -66,6 +66,25 @@ final class FindingVerificationTests: XCTestCase {
         XCTAssertTrue(verdict.backingEvidenceIDs.isEmpty)
     }
 
+    func testScannerLeadSourceReportCannotPromoteToFinding() throws {
+        // A Burp-style scanner lead is pinned as sourceReport. Even approved, it cannot
+        // become a Finding — promotion requires a captured host receipt, not a tool lead.
+        let root = URL(fileURLWithPath: "/private/tmp").appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: root.path) }
+        let lead = root.appendingPathComponent("burp-issue.json")
+        try Data("{\"name\":\"SQL injection\"}".utf8).write(to: lead)
+        let hash = try contract().digest()
+        var ledger = ResearchEvidence.Ledger(caseID: contract().id, contractHash: hash)
+        try ledger.addEvidence(try ResearchEvidence.Evidence.pin(id: "burp-0", caseID: contract().id, contractHash: hash, kind: .sourceReport, path: lead.path))
+        let claim = "The export endpoint is injectable per the scanner."
+        try ledger.propose(.init(id: "claim-1", content: claim, meaning: .reported, evidenceIDs: ["burp-0"]))
+        try ledger.recordOperatorReview(.init(factID: "claim-1", contentHash: ResearchEvidence.hash(claim), evidenceIDs: ["burp-0"], state: .approved, reviewer: "operator"))
+        let verdict = try FindingVerification.verify(factID: "claim-1", ledger: ledger, caseID: contract().id, contractHash: hash)
+        XCTAssertFalse(verdict.isFinding)
+        XCTAssertTrue(verdict.blockers.contains { $0.contains("No host-captured evidence") }, verdict.summary)
+    }
+
     func testModelProposalEvidenceCannotReachApprovedOrPromote() throws {
         // A claim backed only by a model proposal can never be approved by the ledger,
         // so it can never be promoted — model confidence does not become a Finding.

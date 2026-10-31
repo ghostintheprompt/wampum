@@ -1,8 +1,8 @@
+Public source prototype: https://github.com/ghostintheprompt/wampum · [checked release 0.1.1](https://github.com/ghostintheprompt/wampum/releases/tag/v0.1.1-prototype). This checkout retains private development history; public source is curated separately.
+
 # Wampum
 
 ![Wampum artwork: Rockaway marshes, wampum, and jets over Kennedy Airport](Resources/WampumIcon.png)
-
-**Early source prototype · v0.1.1 plus October 30 source updates.** [Source and releases](https://github.com/ghostintheprompt/wampum). Built and tested for a personal red-team workflow on an M4 Mac mini with 16 GB. [Release verification](RELEASE_EVIDENCE.md). [Native release check](docs/release-editor.png).
 
 A native macOS workbench for local security research and prototype development. Built for a Mac mini M4 with 16 GB unified memory. A companion to Avant Garde, for Ghost's research workflow.
 
@@ -29,17 +29,17 @@ Open `build/Wampum.app` in Finder. It is locally ad-hoc signed, not notarized or
 
 Local state: `~/Library/Application Support/Wampum/`. This includes session JSON, checkpoint JSON, file backups, and command logs. These files contain your work, in plaintext. `WAMPUM_STATE_DIR` can redirect state for development. Project edits occur only through Save. Check commands run with your ordinary macOS account. Run Local now restricts direct outbound sockets to loopback through the built-in sandbox-exec utility. External network access requires a frozen-command one-run confirmation. The runner remains neither a general security sandbox, a PTY terminal, nor a process-tree containment service. Checks now own a process group. Stop sends TERM and a short KILL fallback, and normal completion cleans remaining group members before reaping the leader. Detached children can escape. Force quit/power loss can leave commands alive; restart preserves evidence without replaying commands or signaling saved PIDs.
 
-## Initial verification — October 25, 2026
+## Verified October 25, 2026
 
-The initial baseline passed 16 local tests (12 core and four app-model integration checks): path traversal/symlink containment, source-preserving saves and backups, stale-write rejection, create-versus-overwrite behavior, binary/large-file rejection, draft/transcript recovery, corrupt-session preservation at the storage layer, whole-turn context selection, oversized-input rejection, local endpoint restrictions, exact model-name decoding, actual nonzero command exit capture, staged-proposal save behavior, draft-switch checkpoints, and corrupt-session recovery copies.
+Sixteen local tests pass (12 core and four app-model integration checks): path traversal/symlink containment, source-preserving saves and backups, stale-write rejection, create-versus-overwrite behavior, binary/large-file rejection, draft/transcript recovery, corrupt-session preservation at the storage layer, whole-turn context selection, oversized-input rejection, local endpoint restrictions, exact model-name decoding, actual nonzero command exit capture, staged-proposal save behavior, draft-switch checkpoints, and corrupt-session recovery copies.
 
 A separate live local smoke test discovered `lukey03/Qwen3.5-9B-abliterated:latest`, inspected completion/tools/thinking capabilities, and received READY (27 prompt tokens, 2 output tokens) at 4K context with thinking disabled. That model did not report vision. The test did not benchmark red-team performance. The native app launched, rendered, and successfully discovered that model through its own Discover button. Project opening, file selection, and project restoration after app restart were also verified. One idle app-process snapshot was 130,608 KiB RSS (about 127.5 MiB); it excludes Ollama and is not a memory-pressure or long-session benchmark.
 
 ## Still being built
 
-This version has a plain native text editor, reviewed response-to-file staging, a noninteractive check runner, scenario memory, image/OCR inputs, and reviewed single-step browser control through Playwright MCP. Syntax highlighting/LSP, Git review UI, streaming responses, general autonomous tool execution, project indexing, and a measured older-context summarizer remain implementation work. STATUS.md records the public prototype queue.
+This version has a plain native text editor, reviewed response-to-file staging, a noninteractive check runner, scenario memory, image/OCR inputs, and reviewed single-step browser control through Playwright MCP. Syntax highlighting/LSP, Git review UI, streaming responses, general autonomous tool execution, project indexing, and a measured older-context summarizer remain implementation work. STATUS.md is the next-build queue.
 
-MIT licensed. This is an early source release. Build it locally with the commands above.
+MIT licensed. Curated public source: https://github.com/ghostintheprompt/wampum. Private state and development history stay separate.
 
 ## Network Guard
 
@@ -126,7 +126,7 @@ Recent receipts live under Application Support/Wampum/browser-receipts/<scenario
 
 ## Build record: one machine, one workflow
 
-Wampum is a personal cybersecurity proof of concept. The target is Michael's own research/prototype workflow on the computer he already owns. It is not a complete replacement for VS Code, a system-wide firewall, a certified forensic recorder or a measured red-team benchmark. The source is MIT licensed; this source snapshot is prepared for an early prototype release. There is no app account, analytics uploader or hosted inference fallback.
+Wampum is a personal cybersecurity proof of concept. The target is Michael's own research/prototype workflow on the computer he already owns. It is not a complete replacement for VS Code, a system-wide firewall, a certified forensic recorder or a measured red-team benchmark. The source is MIT licensed; public source/release packaging is still pending. There is no app account, analytics uploader or hosted inference fallback.
 
 | Component | Actual development configuration |
 | --- | --- |
@@ -181,7 +181,7 @@ WAMPUM_CONTROLLER_LIVE=1 swift test --filter ControllerAppTests
 
 These are distinct evidence levels. The default suite exercises local fixtures and failure paths. Live-model tests require an installed model and may affect local load. Browser/controller tests use an owned loopback page, not a client environment. The cross-repository provenance integration uses a sibling `coding_agent_monitor_lab` checkout and installed Node, and explicitly skips that integration when its prerequisites are absent.
 
-The isolated release snapshot default run executed 93 tests: 86 passed and 7 explicitly skipped. With local-model/browser/controller flags it passed 90 with 3 skips. The original workspace additionally tested its sibling-monitor integration. See RELEASE_EVIDENCE.md for exact scope and prerequisites. The subsequent installed-Qwen/Playwright click test passed with proposal, explicit operator approval, page change and console evidence. The monitor's separate suite passed 30 assertions and 11 replay tests. Tests are recorded by scope; none of those counts establishes professional engagement success.
+The October 26 pre-release run executed 91 tests: 85 passed and six opt-in tests skipped. Later scoped test totals are recorded below. The subsequent installed-Qwen/Playwright click test passed with proposal, explicit operator approval, page change and console evidence. The monitor's separate suite passed 30 assertions and 11 replay tests. Tests are recorded by scope; none of those counts establishes professional engagement success.
 
 ## Approval and source evidence
 
@@ -191,29 +191,9 @@ The monitor accepts an approval link only when its call hash, independently decl
 
 ## Prototype release boundary
 
-The public snapshot excludes private handoff notes/history, machine-specific client configurations, case material and runtime state. Development checkpoint IDs above refer to the original local development history; this public repository starts from a reviewed source snapshot. The public build record preserves the decisions and failures without publishing private work. The app has no account, but an opted-in external controller can use its own provider account and external tools can transmit data.
+Before public source publication, review the tracked files/history and distribution bundle for machine paths, private handoff notes, case material, credentials and unintended assets. Preserve a public build record without publishing private state. Verify a fresh source build, documented prerequisites, license and package contents. Update the article/social draft with the actual public source and article URLs only after they exist. The app has no account, but an opted-in external controller can use its own provider account and external tools can transmit data.
 
 Still open: detached/reparented browser process containment, full native long-session testing, cold-cancellation/queue cases, streaming responses, project search/diffs/LSP/Git/interactive terminal, independent baseline anchoring and stronger context provenance. Build the next layer when its workflow is needed and testable. A prototype release does not turn those into shipped features.
-
-
-## Browser prerequisites
-
-The editor, local-model client and default fixture suite build without Node or browser packages. Browser control is optional and requires an installed Node executable, Google Chrome and Playwright MCP. The tested MCP version is 0.0.83. Wampum does not download those tools automatically.
-
-To install that explicit browser dependency into a directory you control:
-
-```sh
-npm install --prefix browser-tools --no-audit --no-fund @playwright/mcp@0.0.83
-```
-
-In Browser, set Node to the actual executable from `command -v node` and the MCP server path to `browser-tools/node_modules/@playwright/mcp/cli.js` inside your checkout. Existing npm-cache installations can also be detected. Connect Local, then run Browser Check against its owned loopback page before allowing external browsing. The optional browser dependency has its own transitive packages; the Swift package has no third-party Swift dependencies. A different MCP version needs compatibility testing.
-
-Source release only: no notarized installer, automatic updater or bundled model/browser. Build with the Xcode command-line tools. The reference development toolchain is Swift 6.4 on macOS 26.6.2; the declared app target is macOS 14+. Earlier toolchains/OS releases are not a verified matrix.
-
-
-### Native release QA correction
-
-The first public source cut passed its fixture/service checks, then native QA from a temporary checkout exposed inconsistent `/tmp` and `/private/tmp` path aliases. The explorer trimmed incorrect relative names, and resolution needed the same canonical form on both sides. Version 0.1.1 canonicalizes enumeration and resolution, with two regression tests covering alias roots, Unicode project names and safe saves. Native QA then opened a listed source file, discovered the actual installed model, reviewed the exact request and saved a real READY response (185 prompt tokens,2 output tokens). This correction is retained in the build record.
 
 ## Browser transport shutdown — October 27, 2026
 
@@ -236,39 +216,7 @@ Eight regressions cover multiple drafts/restart, active-only and background save
 
 Undo stacks and cursor/scroll positions are not persisted per tab. Switching constructs a separate editor view so undo cannot insert another file's buffer. Draft persistence uses the existing half-second session debounce and normal-quit save; abrupt termination before that save is not a zero-loss guarantee. Project content search and readable diffs are next; full LSP/Git/interactive terminal and long-session measurements remain open.
 
-![Native editor tabs with synthetic drafts](docs/editor-tabs.jpg)
-
-Public default verification for this editor slice: 104 tests, 96 passed, eight opt-in or private-sibling integration skips, zero failures. The private development run had 97 passes/seven skips because its sibling-monitor integration was available. No new model inference was needed to test editor persistence.
-
-## October 29 research-workflow hardening
-
-Adds case contracts, format-aware source capture, explicitly reviewed evidence memory, stale-request checks, research request/response journals, section-review records, a quality-record scorer and an opt-in isolated Python-function test runner. Case replacement checkpoints previous context before clearing it. New case controls are in the File menu.
-
-The development suite passed 210 tests with ten skipped; a separate 37-test Python boundary suite passed. Narrow installed-model assisted-memory checks passed. These checks do not establish complete-document quality, production security or frontier-model equivalence. Native fixture QA exercised source allocation saving, section-history display, whole-document review/export and refusal of ungraded records. Real-model complete-document acceptance remains pending.
-
-The isolated runner accepts reviewed, pinned stateless JSON functions; legacy shared-process modes remain labeled. Local review records are not authenticated execution proof. No model download, cloud fallback, account or telemetry dependency is introduced.
-
-### Exact source allocation
-
-File → Inspect Case Coverage now lets the operator allocate exact UTF-8 text windows to each required output unit, inspect original hashes and byte ranges, and see omitted windows and extraction warnings. Save the active unit before requesting its section. Selections persist with the case; changed source bytes, stale case bindings and oversized requests are rejected. Older sessions retain explicitly labeled first-window behavior until an exact selection is saved.
-
-Allocation and request inclusion do not prove model comprehension or substantive review. Native fixture QA exercised these controls; core and app-model tests cover selection, omissions, persistence and rejection paths. Whole-document review is connected to the quality-record gate; substantive real-model acceptance remains unproven.
-
-### Section generation and operator review
-
-File → Sections and Reviews stages one required section for exact-request approval using its saved source allocation. Requirement drafts persist separately from generation requirements. Returned attempts preserve original text, stop reason, token counts and request-journal linkage. Repairs retain prior attempts. Truncated or stale attempts cannot be accepted. Unit-specific requirement/allocation changes stale that section; shared context and approved-memory changes affect all sections.
-
-Operator review requires attribution, findings and a hash-pinned local evidence file. All required sections must have current acceptance before draft assembly. Export rechecks evidence, refuses overwriting, reads back saved bytes and retains a draft save receipt. These are supplied local review records, not authenticated proof, automatic semantic checking or final quality release. The integrated path was exercised with host-authored fixtures and a synthetic local HTTP response, with no live-model inference in this phase. Native fixture QA exercised section-history display and the quality export flow. Live generation, substantive completeness and real-document acceptance remain pending.
-
-### Whole-document quality-record gate
-
-File → Final Quality Review recomputes the rubric and assessment against the exact assembled document, frozen task/policy/source inventory, trial conditions and pinned evidence. The rubric must match the case and ordered required sections. A supplied passing report is never sufficient. All extracted windows must be allocated; visual/extraction uncertainty needs explicit source-specific original review evidence.
-
-Indexed code must match closed Markdown code blocks and isolated execution records must match cited code/test hashes; shared-process and fixture execution records cannot masquerade as real model results. Generation-time request/response/binding hashes are preserved for new section attempts. Real Wampum releases require consistent actual section journals; older unpinned attempts remain preserved but cannot be retroactively certified by this gate.
-
-Explicit whole-document operator findings are required. Export rechecks all inputs, refuses overwrite, reads back output bytes and retains approval/evaluation/save or failure records. Fixtures stay labeled fixture-only. This validates supplied-record and file consistency, not authenticated identities, execution truth, automatic semantic correctness or frontier equivalence. Generic chat/transcript and draft exports remain separate from this reviewed export. Quality file verification runs on a value snapshot off the UI actor; source ingestion and some case checks still need measured responsiveness work.
-
-The native positive and ungraded-negative paths were exercised with host-authored fixtures and no live inference. A real source-backed model/document acceptance run is still required.
+Private default verification for this editor slice: 104 tests, 97 passed, seven opt-in skips, zero failures. Curated public source: 104 tests, 96 passed, eight skips (including the unavailable private-sibling integration), zero failures.
 
 ## Model default and finding gate — October 29, 2026
 
@@ -278,16 +226,28 @@ The default model selector now resolves to the single authorized local model, `l
 
 `FindingGateTests` checks the lint against three real false-positive outputs, which it blocks, and one honest research note, which it passes with no flags. Full suite: 140 core plus 74 app, 214 tests, zero failures. The gate catches premature-finding framing, not semantic truth; demonstrating a claim on an authorized target remains a separate step. A dedicated verdict panel, enforced authorized-scope gating before browser or probe actions, and an evidence-driven path from hypothesis to finding remain open.
 
-## Scope-gated tooling: hypothesis to finding, and multi-tool orchestration — October 30, 2026
+## Pentest orchestration toward client-ready use — October 30, 2026
 
-This is the piece the previous section left open. The problem: when a workbench starts driving real tools against real targets — for an authorized client engagement or a bug-bounty program — the hard requirement is that it provably cannot act outside the authorized scope, and that a "finding" is backed by evidence rather than model confidence. The whole design here follows from that one constraint, applied the same way to every tool so each new tool is a thin addition rather than a new trust path.
+The three items the October 29 note left open — a verdict panel, enforced authorized-scope gating before outward actions, and an evidence-driven path from hypothesis to finding — are built, and the workbench grew a Tools workspace for scope-gated external tools. All of it routes through the same guarantees: a per-case authorized scope (the rules of engagement), owned process groups, explicit operator review, and hashed receipts. With no case scope declared, every outward action fails closed.
 
-**One authorization boundary.** `AuthorizedScope` is a fail-closed host matcher built from an operator-authored field on the case contract: an empty scope authorizes nothing, and matching is on the URL host only (exact, `*.sub`, or `.apex`), so a path or query can never widen it. The contract field is backward compatible — it is omitted from encoding when empty, so existing contract digests and their ledger bindings are unchanged. Browser navigation and the proxy HEAD tool both route through it: loopback stays open as the local-fixture path, and every other destination is authorized before any request leaves, with the decision logged host-only to the network-events ledger. `WirelessScope` applies the same fail-closed idea to RF engagements (authorized BSSID/channel), because wireless scope is not a host.
+Authorized-scope gating. A case contract carries an `authorizedScope` (host-only; exact, `*.sub` and `.apex` wildcards; empty authorizes nothing). It is enforced at browser navigation and at the proxy before any request leaves, and it gates every external tool. Out-of-scope targets are refused before anything is sent.
 
-**Evidence, not confidence.** `FindingVerification` promotes a claim from Hypothesis to Finding only when, checked live: the claim's fact is operator-approved in the evidence ledger (which already bars model-proposal evidence from approval), it is backed by at least one captured host receipt that still verifies byte-for-byte on disk, and its text passes `FindingGate` with no blockers. Anything short of all three leaves it a Hypothesis with explicit reasons. Model assertion alone never promotes — a test proves a model-proposal-backed claim cannot even be approved, let alone promoted.
+Hypothesis to finding. `FindingVerification` promotes a ledger claim from Hypothesis to Finding only when, checked live, the claim is operator-approved, references at least one host-captured receipt that still verifies byte-for-byte on disk, and passes `FindingGate` with no blockers. It is fail-closed and mutates nothing; a model assertion, a scanner lead, or a tampered receipt cannot promote. The Tools workspace surfaces this with per-claim verify, the gate verdict, and a report generator that emits only promoted findings — severity, weakness and impact are left for the operator, never asserted by the tool.
 
-**The same spine for every tool.** A shared `ToolScopeGate` plus `ToolReceipt` means Burp, Docker, and wireless all produce the same hashed evidence that the verification loop consumes. The Burp client (`BurpClient`) is loopback-only, refuses redirects, authorizes every scan target against the case scope and mirrors that scope into Burp's own scan scope before anything is sent. Docker control (`DockerControl`) is open within the rules of engagement — any subcommand under per-invocation operator review, no artificial allowlist — but a network-capable action still requires a declared in-scope target, and it is honest that wrapping the client cannot contain a container's runtime egress. Each result pins into the ledger as a host receipt, so a scanner finding backs a Finding exactly like a browser capture.
+Scope-gated external tools (Tools workspace). Each is operator-reviewed and receipted and reaches only in-scope targets: Docker control; Burp Suite over loopback REST with the scan scope mirrored; recon (nmap/ffuf, reviewed run or result import, output as leads); a request replayer with an identity matrix and an object-ID (BOLA/IDOR) sweep; an authorization-persistence (temporal) check; source-review import (Semgrep); and a test-variation / detection layer that measures whether a defense reacted differently to recorded request variations — a purple-team signal, not a stealth mode — with saved profiles that can be re-run and compared across runs and environments. Every result is a lead; promotion goes through the evidence path above. Wireless capture (monitor-mode 802.11) runs in a Kali UTM guest driven over `utmctl`, with Wampum orchestrating and custodying the hashed evidence; this path is live-verified against real hardware (an Alfa RTL8812AU) on an authorized network.
 
-**Wireless, delegated honestly.** Monitor-mode capture is a Linux-kernel-driver concern, so it cannot run on macOS and the workbench does not pretend otherwise. Instead it orchestrates a UTM Linux guest over `utmctl`: `UTMControl` builds the real command vectors and generates an RoE-bounded guest scope file; a `GuestTransport` abstraction (UTM guest agent by default, SSH as a fallback) pushes the capture script, backgrounds the capture, and pulls back a hashed manifest; every returned manifest is re-checked against the RF scope before any file is pinned. The capture runs where the hardware is; the scope, orchestration, verification and evidence custody stay in the workbench.
+Client readiness. Tool receipts are bound to their engagement, and the receipts view is scoped to the active case so one client's activity does not surface while working another's. An evidence ledger that belongs to a different engagement is refused on import with a clear message. A full engagement exports as one self-contained, auditable bundle: the report, the complete case ledger, the engagement's receipts, the copied evidence, the in-scope network events, and a hashed manifest, proven by reading it back.
 
-**How this was verified.** Unit tests cover the pure logic — scope matching and fail-closed authorization, guest scope-file generation that re-authorizes every selected target, manifest verification that rejects any out-of-scope capture, command-vector construction, and the hypothesis-to-finding promotion including the model-proposal-cannot-promote case. Two opt-in live integration tests run against a real guest when enabled by environment variable: one exercises the host-side transport (exec plus a byte-exact file round trip), the other drives the entire capture orchestration end to end and then promotes the pinned capture to a Finding. The full suite is 174 core plus 82 app, 256 tests, zero failures (the live and other opt-in tests skip without their environment). What is deliberately not claimed: the capture flow has not been driven through the GUI in a single click, the SSH transport has not been run against a configured server, and a fixture pass is never presented as a live engagement. The boundary between what is proven and what is pending is kept explicit on purpose — that is the point of the tool.
+Honesty boundary. The HTTP-facing tools are proven against loopback fixtures, not yet driven against real external targets; a fixture or loopback pass is not a live engagement. Local operator review records intent and byte-consistency, not authenticated proof. Results stay leads until the evidence path promotes them. Full suite: 216 core plus 100 app, 316 tests, zero failures.
+
+## AI/LLM red-team suite — October 31, 2026
+
+Wampum now carries an AI/LLM red-team testing suite for authorized engagements, built on the same discipline as the rest of the tool: a per-case authorized scope decides what may be contacted (fail-closed), every probe result is a lead, and a lead becomes a finding only through captured evidence and the verification path. These are evaluators for authorized targets, not weapons.
+
+Modules (each a pure, tested core, with a shared `AIRedTeam` foundation): indirect prompt injection and tool weaponization; RAG context contamination; excessive agency / unauthorized tool use; cross-session memory-persistence leaks; multimodal (image/OCR-layer) injection; guardrail-robustness measurement (does a recorded input mutation skew a refusal into compliance); a defensive agent guard (context enclave + egress filter); and a closed-loop attack-graph orchestrator that rolls the probe signals into one picture. A scope-gated inference-endpoint discovery finds exposed model APIs on an in-scope host as leads, and a scope-gated network-injection plan (authorized-engagement only, host-filtered, run from the operator's Kali guest under the rules of engagement) covers MitM/RAG delivery.
+
+The Tools workspace drives it: point the AI section at a scope-gated endpoint with a canary marker and an optional refusal probe, and Wampum sends the injection payloads and guardrail mutations, captures every response as hashed evidence, and rolls them into an attack graph. Validated end to end against a local model on loopback.
+
+Hardening: the suite and the surrounding tool were pressure-tested against their own guarantees. Fixed — an AI-probe false positive (a refusal that merely names the canary is not a leak), report markdown injection (claim text is blockquoted so it cannot forge report structure), IPv6 host normalization, and a leading-dot host matching a subdomain wildcard. Verified resistant and locked as regression tests — XXE/external-entity resolution in XML parsing (safe defaults made explicit), entity-expansion bombs, claim tampering after approval, receipt swaps after approval, exotic/punycode/whitespace hosts, and malformed/oversized parser input.
+
+The honesty boundary is unchanged: the AI cores are tested and the live path is loopback-validated; runs against a real in-scope agentic target are operator-driven, and nothing is reported that the evidence path has not promoted.

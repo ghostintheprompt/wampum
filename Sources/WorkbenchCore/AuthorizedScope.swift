@@ -30,7 +30,11 @@ public struct AuthorizedScope: Codable, Sendable, Equatable {
         value = value.split(separator: "/", maxSplits: 1).first.map(String.init) ?? value
         if value.hasPrefix("[") { // bracketed IPv6 literal, drop any trailing :port after the bracket
             if let close = value.firstIndex(of: "]") { value = String(value[...close]) }
-        } else if let colon = value.lastIndex(of: ":"), value[value.index(after: colon)...].allSatisfy(\.isNumber) {
+        } else if value.filter({ $0 == ":" }).count == 1, let colon = value.lastIndex(of: ":"),
+                  !value[value.index(after: colon)...].isEmpty,
+                  value[value.index(after: colon)...].allSatisfy(\.isNumber) {
+            // Single colon = host:port; strip the port. Two or more colons = a bare IPv6 literal
+            // (which must be bracketed to carry a port), so leave it intact rather than mangle it.
             value = String(value[..<colon])
         }
         return value
@@ -61,7 +65,9 @@ public struct AuthorizedScope: Codable, Sendable, Equatable {
 
     public func matches(host: String) -> Bool {
         let target = Self.normalize(host)
-        guard !target.isEmpty else { return false }
+        // Reject an empty host or one with an empty leading label (".api.example.com"): such a
+        // malformed host must never slip past a subdomain wildcard.
+        guard !target.isEmpty, !target.hasPrefix(".") else { return false }
         for entry in entries {
             if entry.hasPrefix("*.") {
                 let base = String(entry.dropFirst(2))

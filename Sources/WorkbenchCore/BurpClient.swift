@@ -91,6 +91,39 @@ public actor BurpClient {
         }
     }
 
+    /// One Burp scanner issue, as a LEAD. A scanner issue is not proof of impact — it is a
+    /// candidate the researcher must reproduce and capture before it can back a Finding. It
+    /// is imported into the ledger as a sourceReport, never a hostReceipt, so the Phase 2
+    /// verification loop structurally cannot promote it on its own.
+    public struct BurpIssue: Codable, Equatable, Sendable {
+        public let name: String
+        public let severity: String
+        public let confidence: String
+        public let origin: String
+        public let path: String?
+        /// An out-of-band / Collaborator interaction: the target actually called back to a
+        /// unique Collaborator host our payload triggered. That is observed impact (SSRF,
+        /// blind injection), not a pattern match — so it imports as a hostReceipt, not a lead.
+        public var isOutOfBand: Bool {
+            let n = name.lowercased()
+            return n.contains("out-of-band") || n.contains("out of band")
+                || n.contains("external service interaction") || n.contains("collaborator")
+                || n.contains("oob")
+        }
+    }
+
+    /// Fetch the scanner issues for a task. Only issues whose origin host is inside the case
+    /// scope are returned (defense in depth; the scan was already scope-bounded).
+    public func scanIssues(taskID: String, scope: AuthorizedScope) async throws -> [BurpIssue] {
+        let (_, raw) = try await scanStatus(taskID: taskID)
+        struct Wrapper: Decodable { struct Event: Decodable { let issue: BurpIssue? }; let issue_events: [Event]? }
+        let issues = (try JSONDecoder().decode(Wrapper.self, from: raw).issue_events ?? []).compactMap { $0.issue }
+        return issues.filter { issue in
+            guard let url = URL(string: issue.origin) else { return false }
+            return (try? scope.authorize(url)) != nil
+        }
+    }
+
     /// Read a scan task's status. Returns the decoded JSON and a short status summary.
     public func scanStatus(taskID: String) async throws -> (summary: String, raw: Data) {
         guard !taskID.isEmpty, taskID.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber) }) else {

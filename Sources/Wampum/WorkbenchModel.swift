@@ -44,6 +44,8 @@ import WorkbenchCore
     @Published var burpAPIKey=""
     var pendingDockerPlan:DockerControl.Plan?
     @Published var showDockerConfirmation=false
+    var pendingReconPlan:ReconControl.Plan?
+    @Published var showReconConfirmation=false
     // Wireless (UTM/Kali) capture controller state.
     @Published var wirelessVM="Kali"
     @Published var wirelessAdapter="0BDA:8812"
@@ -83,7 +85,9 @@ import WorkbenchCore
     var pendingThinking=false
     var pendingThinkingCapability=false
     let probeClient:ProxyProbeClient
+    let replayer:RequestReplayer
     let networkGuard:NetworkGuard
+    @Published var replayBusy=false
     let store: SessionStore
     let client: OllamaClient
     let browser:BrowserModel
@@ -101,6 +105,7 @@ import WorkbenchCore
         let directory = stateDirectory ?? override.map { URL(fileURLWithPath:$0) } ?? FileManager.default.urls(for:.applicationSupportDirectory,in:.userDomainMask)[0].appendingPathComponent("Wampum")
         networkGuard=NetworkGuard(directory:directory)
         probeClient=ProxyProbeClient(guardrail:networkGuard)
+        replayer=RequestReplayer(guardrail:networkGuard)
         do { store = try SessionStore(directory:directory); client = try OllamaClient(base:ollamaBase,guardrail:networkGuard) }
         catch { fatalError("Cannot initialize local workbench: \(error)") }
         browser=BrowserModel(directory:directory,guardrail:networkGuard)
@@ -449,11 +454,142 @@ import WorkbenchCore
         }catch{findingVerdict=nil;self.error=error.localizedDescription}
     }
 
+    @Published var findingReport:FindingReport.Report?
+    @Published var reportStatus="No report generated."
+
+    /// Phase 3: build the program report from the live ledger. Every candidate claim is
+    /// re-verified at this moment, so only promoted Findings appear; excluded claims are kept
+    /// visible with their blockers. Pure — writes nothing. Call `exportFindingReport` to save.
+    func generateFindingReport(program:String){
+        guard let state=session.researchCase else{findingReport=nil;reportStatus="No research case active.";error="No research case with an evidence ledger is active.";return}
+        do{
+            let hash=try state.contract.digest()
+            let report=try FindingReport.generate(ledger:state.ledger,caseID:state.contract.id,contractHash:hash,program:program.isEmpty ? nil:program)
+            findingReport=report
+            reportStatus="Report ready: \(report.findings.count) promoted finding(s), \(report.excluded.count) excluded. Export to save."
+        }catch{findingReport=nil;reportStatus="Report generation failed.";self.error=error.localizedDescription}
+    }
+
+    /// Save the current report as a per-engagement evidence bundle: the markdown report, a
+    /// JSON manifest of findings + verified receipt hashes, and a copy of each verified receipt
+    /// file. The report is regenerated from the live ledger first (never from a stale cached
+    /// object), then read back from disk and its bytes hashed into a receipt — export is proven
+    /// by readback, not assumed. Bundles are per-engagement so client engagements stay separate.
+    func exportFindingReport(program:String,to directory:URL){
+        guard let state=session.researchCase else{error="No research case active.";return}
+        do{
+            let hash=try state.contract.digest()
+            let report=try FindingReport.generate(ledger:state.ledger,caseID:state.contract.id,contractHash:hash,program:program.isEmpty ? nil:program)
+            let safeCase=state.contract.id.replacingOccurrences(of:"/",with:"_").replacingOccurrences(of:" ",with:"-")
+            let stamp=ISO8601DateFormatter().string(from:report.generated).replacingOccurrences(of:":",with:"-")
+            let bundle=directory.appendingPathComponent("wampum-report-\(safeCase)-\(stamp)")
+            if FileManager.default.fileExists(atPath:bundle.path){throw WorkbenchError.invalid("Export bundle already exists; not overwriting: \(bundle.lastPathComponent)")}
+            try FileManager.default.createDirectory(at:bundle,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+
+            let mdURL=bundle.appendingPathComponent("report.md")
+            try Data(report.markdown.utf8).write(to:mdURL,options:[.atomic])
+            let enc=JSONEncoder();enc.outputFormatting=[.sortedKeys,.prettyPrinted];enc.dateEncodingStrategy = .iso8601
+            try enc.encode(report).write(to:bundle.appendingPathComponent("report.json"),options:[.atomic])
+
+            // Copy each verified receipt file so the bundle is self-contained, keeping the hash.
+            let evidenceIndex=Dictionary(state.ledger.evidence.map{($0.id,$0)},uniquingKeysWith:{a,_ in a})
+            let evDir=bundle.appendingPathComponent("evidence")
+            if !report.findings.isEmpty{try FileManager.default.createDirectory(at:evDir,withIntermediateDirectories:true)}
+            for f in report.findings{ for r in f.receipts{ if let ev=evidenceIndex[r.id]{
+                let dest=evDir.appendingPathComponent("\(r.id)-\(r.file)")
+                try? FileManager.default.copyItem(atPath:ev.path,toPath:dest.path)
+            }}}
+
+            // Prove the export by reading the markdown back and hashing the actual bytes written.
+            let readBack=try Data(contentsOf:mdURL)
+            let digest=ToolReceipt.hash(String(decoding:readBack,as:UTF8.self))
+            var receipt=ToolReceipt(tool:"report",action:"export",targets:[state.contract.id],argument:bundle.lastPathComponent,outcome:.succeeded,detail:"Exported \(report.findings.count) finding(s) to \(bundle.path). Report bytes read back and hashed.")
+            receipt.resultSHA256=digest
+            recordToolReceipt(receipt)
+            reportStatus="Exported to \(bundle.lastPathComponent): \(report.findings.count) finding(s), \(report.excluded.count) excluded. Report readback hashed into a receipt."
+        }catch{reportStatus="Export failed.";self.error=error.localizedDescription}
+    }
+
+    /// Host of a network-event destination ("https://host:443", "host, host2", or bare host).
+    private static func eventHosts(_ destination:String) -> [String] {
+        destination.split(whereSeparator:{$0==","}).compactMap{ part in
+            let s=part.trimmingCharacters(in:.whitespaces)
+            if let u=URL(string:s),let h=u.host{return h}
+            return s.split(separator:":").first.map(String.init)
+        }
+    }
+
+    /// Full per-engagement export: one self-contained, auditable bundle a client can be handed.
+    /// It gathers everything bound to THIS engagement and nothing from another: the report, the
+    /// complete case evidence ledger, the tool receipts stamped with this engagement, the copied
+    /// evidence files, and the network events whose destination host is in the engagement scope
+    /// (out-of-scope / other-engagement hosts are excluded so one client's bundle never leaks
+    /// another's targets). A manifest records every file's sha256; the export is proven by reading
+    /// the manifest back and hashing it into a receipt. Refuses to overwrite an existing bundle.
+    func exportEngagementBundle(to directory:URL){
+        guard let state=session.researchCase else{error="No research case active.";return}
+        let scope=engagementScope
+        let receipts=toolReceipts.filter{$0.engagement==state.contract.id}
+        Task{@MainActor in
+            do{
+                let hash=try state.contract.digest()
+                let report=try FindingReport.generate(ledger:state.ledger,caseID:state.contract.id,contractHash:hash)
+                let events=((try? await networkGuard.recent()) ?? []).filter{ ev in
+                    let hosts=Self.eventHosts(ev.destination)
+                    return !hosts.isEmpty && hosts.allSatisfy{ scope.matches(host:$0) || $0=="127.0.0.1" || $0=="localhost" }
+                }
+                let safeCase=state.contract.id.replacingOccurrences(of:"/",with:"_").replacingOccurrences(of:" ",with:"-")
+                let stamp=ISO8601DateFormatter().string(from:Date()).replacingOccurrences(of:":",with:"-")
+                let bundle=directory.appendingPathComponent("wampum-engagement-\(safeCase)-\(stamp)")
+                if FileManager.default.fileExists(atPath:bundle.path){throw WorkbenchError.invalid("Engagement bundle already exists; not overwriting: \(bundle.lastPathComponent)")}
+                try FileManager.default.createDirectory(at:bundle,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+                let enc=JSONEncoder();enc.outputFormatting=[.sortedKeys,.prettyPrinted];enc.dateEncodingStrategy = .iso8601
+
+                var manifest:[[String:String]]=[]
+                func writeFile(_ name:String,_ data:Data) throws {
+                    let url=bundle.appendingPathComponent(name)
+                    try data.write(to:url,options:[.atomic]);try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:url.path)
+                    manifest.append(["file":name,"sha256":ToolReceipt.hash(String(decoding:data,as:UTF8.self)),"bytes":String(data.count)])
+                }
+                try writeFile("report.md",Data(report.markdown.utf8))
+                try writeFile("report.json",try enc.encode(report))
+                try writeFile("ledger.json",try enc.encode(state.ledger))
+                try writeFile("receipts.json",try enc.encode(receipts))
+                try writeFile("network-events.json",try enc.encode(events))
+
+                // Copy every evidence file the ledger references (host receipts AND leads).
+                let evDir=bundle.appendingPathComponent("evidence")
+                try FileManager.default.createDirectory(at:evDir,withIntermediateDirectories:true)
+                for ev in state.ledger.evidence{
+                    let dest=evDir.appendingPathComponent("\(ev.id)-"+URL(fileURLWithPath:ev.path).lastPathComponent)
+                    try? FileManager.default.copyItem(atPath:ev.path,toPath:dest.path)
+                }
+
+                // Manifest last, then prove the export by reading it back and hashing it.
+                let manifestURL=bundle.appendingPathComponent("manifest.json")
+                let manifestPayload:[String:Any]=["engagement":state.contract.id,"generated":stamp,"files":manifest,
+                    "counts":["findings":report.findings.count,"evidence":state.ledger.evidence.count,"receipts":receipts.count,"networkEvents":events.count]]
+                let manifestJSON=try JSONSerialization.data(withJSONObject:manifestPayload,options:[.sortedKeys,.prettyPrinted])
+                try manifestJSON.write(to:manifestURL,options:[.atomic]);try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:manifestURL.path)
+
+                let readBack=try Data(contentsOf:manifestURL)
+                var r=ToolReceipt(tool:"engagement",action:"export",targets:[state.contract.id],argument:bundle.lastPathComponent,outcome:.succeeded,detail:"Exported engagement \(state.contract.id): \(report.findings.count) finding(s), \(state.ledger.evidence.count) evidence item(s), \(receipts.count) receipt(s), \(events.count) in-scope network event(s). Manifest read back and hashed.")
+                r.resultSHA256=ToolReceipt.hash(String(decoding:readBack,as:UTF8.self))
+                recordToolReceipt(r)
+                reportStatus="Engagement exported to \(bundle.lastPathComponent): report + ledger + \(receipts.count) receipt(s) + \(state.ledger.evidence.count) evidence file(s) + \(events.count) in-scope network event(s), manifest hashed into a receipt."
+            }catch{reportStatus="Engagement export failed.";self.error=error.localizedDescription}
+        }
+    }
+
     // MARK: - External pen-test tools (Docker, Burp) — scope-gated, operator-reviewed, receipted.
 
     private var engagementScope:AuthorizedScope { AuthorizedScope(session.researchCase?.contract.authorizedScope ?? []) }
 
     private func recordToolReceipt(_ receipt:ToolReceipt){
+        var receipt=receipt
+        // Bind every receipt to the active engagement so one client's tool activity never shows
+        // up while working another's. Stamp only if the caller didn't already set it.
+        if receipt.engagement==nil{receipt.engagement=session.researchCase?.contract.id}
         var updated=toolReceipts
         if let index=updated.firstIndex(where:{$0.id==receipt.id}){updated[index]=receipt}else{updated.append(receipt)}
         if updated.count>200{updated.removeFirst(updated.count-200)}
@@ -498,6 +634,42 @@ import WorkbenchCore
         }catch{running=false;process=nil;receipt.outcome = .failed;receipt.detail=error.localizedDescription;recordToolReceipt(receipt);self.error=error.localizedDescription;toolStatus="docker launch failed."}
     }
 
+    /// Build and scope-gate an nmap/ffuf invocation, then freeze it for explicit operator review.
+    /// The target is authorized against the RoE scope first; nothing runs until `allowReconRun`.
+    func prepareReconRun(tool:ReconControl.Tool,target:String,extraArgs:[String]){
+        guard !running,!busy else{toolStatus="Finish the active run before issuing a tool command.";return}
+        guard let executable=ReconControl.detect(tool) else{self.error="\(tool.rawValue) not found on PATH. Install it or run it yourself and import the results; Wampum does not install it.";toolStatus="\(tool.rawValue) not detected; nothing was run.";return}
+        do{
+            pendingReconPlan=try ReconControl.plan(tool:tool,executable:executable,target:target,extraArgs:extraArgs,scope:engagementScope)
+            showReconConfirmation=true
+        }catch{pendingReconPlan=nil;self.error=error.localizedDescription;toolStatus="\(tool.rawValue) command blocked; nothing was run."}
+    }
+    func cancelReconRun(){pendingReconPlan=nil;showReconConfirmation=false}
+    func allowReconRun(){
+        guard let plan=pendingReconPlan,!running else{return}
+        pendingReconPlan=nil;showReconConfirmation=false
+        var receipt=plan.receipt
+        let folder=workspace?.root ?? URL(fileURLWithPath:session.project.isEmpty ? FileManager.default.currentDirectoryPath:session.project)
+        let log=store.directory.appendingPathComponent("tool-receipts").appendingPathComponent("\(receipt.tool)-"+receipt.id.uuidString+".log")
+        do{try FileManager.default.createDirectory(at:log.deletingLastPathComponent(),withIntermediateDirectories:true,attributes:[.posixPermissions:0o700]);FileManager.default.createFile(atPath:log.path,contents:nil,attributes:[.posixPermissions:0o600])}catch{self.error=error.localizedDescription;return}
+        running=true;toolStatus="Running \(receipt.tool) "+receipt.action;output="$ "+([plan.executable.path]+plan.arguments).joined(separator:" ")+"\n"
+        Task{try? await networkGuard.record(component:receipt.tool.capitalized,destination:receipt.targets.joined(separator:", "),decision:"TOOL_RECON_APPROVED",detail:"operator-reviewed; "+receipt.detail);refreshNetwork()}
+        do{
+            let command=try CommandPlan.ownedTool(executable:plan.executable,arguments:plan.arguments)
+            let started=receipt
+            process=try OwnedCommand(plan:command,directory:folder,log:log){ [weak self] exitCode,cancelled in
+                let data=(try? Data(contentsOf:log,options:.mappedIfSafe)) ?? Data()
+                let text=String(decoding:data.prefix(131072),as:UTF8.self)
+                Task{@MainActor in
+                    guard let self else{return}
+                    self.running=false;self.process=nil;self.output=self.output+text+"\nExit: \(exitCode)"
+                    var done=started;done.outcome=cancelled ? .failed:(exitCode==0 ? .succeeded:.failed);done.detail=started.detail+" Exit \(exitCode)."+(cancelled ? " Stopped.":"");done.resultSHA256=ToolReceipt.hash(text)
+                    self.recordToolReceipt(done);self.toolStatus="\(done.tool) \(done.action): \(done.outcome.rawValue) (exit \(exitCode))."
+                }
+            }
+        }catch{running=false;process=nil;receipt.outcome = .failed;receipt.detail=error.localizedDescription;recordToolReceipt(receipt);self.error=error.localizedDescription;toolStatus="\(receipt.tool) launch failed."}
+    }
+
     /// Submit a scope-gated Burp scan. Every target host is authorized against the RoE scope
     /// and mirrored into Burp's scan scope before anything is sent. Loopback-only, no redirects.
     func burpScan(urls:[String]){
@@ -511,6 +683,487 @@ import WorkbenchCore
                 let receipt=try await client.startScan(urls:urls,scope:scope)
                 recordToolReceipt(receipt);toolStatus="Burp: "+receipt.detail;refreshNetwork()
             }catch{self.error=error.localizedDescription;toolStatus="Burp scan blocked or failed; see error."}
+        }
+    }
+
+    /// Run a matched-identity access-control test: send the same request under each identity,
+    /// capture every response as a hostReceipt, and compare them. A broken-access-control
+    /// signal is a lead backed by real captured responses — the operator approves a claim
+    /// citing the owner + unauthorized captures and `FindingVerification` promotes it.
+    func runIdentityMatrix(method:String,urlString:String,identities:[ReplayIdentity]){
+        guard !busy,!replayBusy else{return}
+        guard let activeState=session.researchCase else{error="No research case is active.";return}
+        guard let url=URL(string:urlString) else{error="Invalid URL.";return}
+        guard identities.count>=2 else{error="Declare at least two identities (e.g. owner + attacker).";return}
+        let scope=engagementScope
+        replayBusy=true;toolStatus="Running identity matrix (\(identities.count) identities)…"
+        Task{@MainActor in
+            defer{replayBusy=false}
+            do{
+                let dir=store.directory.appendingPathComponent("replay-captures").appendingPathComponent(activeState.contract.id+"-"+String(UUID().uuidString.prefix(8)))
+                try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+                var observations:[ResponseObservation]=[]
+                var pinnedIDs:[String]=[]
+                for id in identities{
+                    let r=try await replayer.send(method:method,url:url,identity:id,scope:scope)
+                    observations.append(r.observation)
+                    var target=session.researchCase ?? activeState
+                    let hash=try target.contract.digest()
+                    let safe=id.label.unicodeScalars.map{CharacterSet.alphanumerics.contains($0) ? Character($0):"-"}.reduce(into:""){$0.append($1)}
+                    let file=dir.appendingPathComponent("resp-\(safe).bin")
+                    try r.body.write(to:file,options:.atomic)
+                    try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file.path)
+                    let pin=try ResearchEvidence.Evidence.pin(id:"replay-\(safe)-\(String(UUID().uuidString.prefix(6)))",caseID:target.contract.id,contractHash:hash,kind:.hostReceipt,path:file.path)
+                    try target.ledger.addEvidence(pin)
+                    var updated=session;updated.researchCase=target;session=updated
+                    pinnedIDs.append(pin.id)
+                }
+                let signal=try ResponseComparison.evaluate(observations)
+                var receipt=ToolReceipt(tool:"replay",action:"identity-matrix",targets:[url.host ?? ""],argument:"\(method) \(url.path)",outcome:.succeeded,detail:"\(signal.classification.rawValue): \(signal.detail) Captured responses pinned as evidence: \(pinnedIDs.joined(separator:", ")).")
+                recordToolReceipt(receipt)
+                try checkpointSession();persist();refreshNetwork()
+                toolStatus="Identity matrix: \(signal.classification.rawValue). \(pinnedIDs.count) responses pinned. "+(signal.present ? "Reproduce/approve a claim citing the captures to promote a Finding.":"No access-control signal.")
+            }catch{self.error=error.localizedDescription;toolStatus="Identity matrix failed; see error."}
+        }
+    }
+
+    @Published var aiReport:AttackGraphOrchestrator.Report?
+    @Published var aiStatus="No AI red-team run."
+
+    /// AI/LLM red-team suite (ported 2026 modules). Sends the indirect-prompt-injection payloads
+    /// and the guardrail-robustness mutations to a SCOPE-GATED AI endpoint (the case authorizedScope
+    /// must cover its host — loopback or an in-scope engagement target), captures every response as
+    /// a hostReceipt, evaluates each with the pure probes, and rolls the signals up through the
+    /// AttackGraphOrchestrator. Every crossing is a LEAD, promoted only via FindingVerification.
+    func runAIInjectionSuite(endpoint:String,model:String,secretMarker:String,refusalProbe:String){
+        guard !busy,!replayBusy else{return}
+        guard let activeState=session.researchCase else{error="No research case is active.";return}
+        guard let url=URL(string:endpoint) else{error="Invalid endpoint URL.";return}
+        guard !secretMarker.isEmpty else{error="Set a canary secret marker so a leak is detectable.";return}
+        let scope=engagementScope
+        aiReport=nil
+        replayBusy=true;aiStatus="Running AI injection suite…"
+        Task{@MainActor in
+            defer{replayBusy=false}
+            do{
+                let dir=store.directory.appendingPathComponent("ai-redteam-captures").appendingPathComponent(activeState.contract.id+"-"+String(UUID().uuidString.prefix(8)))
+                try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+                var pinned:[String]=[]
+                @MainActor func ask(_ prompt:String,_ label:String) async throws -> String {
+                    // num_predict caps output so detection is fast; local model generation can be
+                    // slow on first (cold) load, so allow a generation-appropriate timeout.
+                    let payload=try JSONSerialization.data(withJSONObject:["model":model,"prompt":prompt,"stream":false,"options":["num_predict":256]])
+                    let r=try await replayer.send(method:"POST",url:url,baseHeaders:["Content-Type":"application/json"],body:payload,identity:ReplayIdentity(label:label,authorized:true,headers:[:]),scope:scope,timeout:180)
+                    let text:String
+                    if let obj=try? JSONSerialization.jsonObject(with:r.body) as? [String:Any],let resp=obj["response"] as? String{text=resp}else{text=String(decoding:r.body,as:UTF8.self)}
+                    var target=session.researchCase ?? activeState
+                    let hash=try target.contract.digest()
+                    let safe=label.unicodeScalars.map{CharacterSet.alphanumerics.contains($0) ? Character($0):"-"}.reduce(into:""){$0.append($1)}
+                    let file=dir.appendingPathComponent("resp-\(safe).txt")
+                    try r.body.write(to:file,options:.atomic);try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file.path)
+                    let pin=try ResearchEvidence.Evidence.pin(id:"ai-\(safe)-\(String(UUID().uuidString.prefix(6)))",caseID:target.contract.id,contractHash:hash,kind:.hostReceipt,path:file.path)
+                    try target.ledger.addEvidence(pin)
+                    var updated=session;updated.researchCase=target;session=updated
+                    pinned.append(pin.id)
+                    return text
+                }
+                var signals:[AIRedTeam.Signal]=[]
+                // Module 1: indirect prompt injection payloads.
+                for a in PromptInjectionProbe.payloads(secretMarker:secretMarker){
+                    let resp=try await ask(a.payload,a.label)
+                    signals.append(PromptInjectionProbe.evaluate(response:resp,secretMarker:secretMarker,injectedDirectiveMarkers:["system update","acknowledged","as instructed"]))
+                }
+                // Module 7: guardrail robustness on the operator's refusal probe.
+                if !refusalProbe.isEmpty{
+                    let base=try await ask(refusalProbe,"baseline")
+                    var muts:[(label:String,response:String)]=[]
+                    for m in GuardrailRobustnessProbe.mutations(of:refusalProbe){ muts.append((m.label,try await ask(m.payload,m.label))) }
+                    signals.append(GuardrailRobustnessProbe.evaluate(baselineResponse:base,mutationResponses:muts))
+                }
+                let report=AttackGraphOrchestrator.build(from:signals)
+                aiReport=report
+                let receipt=ToolReceipt(tool:"ai-redteam",action:"injection-suite",targets:[url.host ?? ""],argument:model,outcome:.succeeded,detail:report.detail+" Captured \(pinned.count) responses as evidence.")
+                recordToolReceipt(receipt)
+                try checkpointSession();persist();refreshNetwork()
+                aiStatus=report.anyCrossing ? "AI suite: boundary crossed on \(report.successfulTechniques.joined(separator:", ")) — LEAD; approve a claim citing the captures to promote.":"AI suite: no boundary crossing observed."
+            }catch{self.error=error.localizedDescription;aiStatus="AI suite failed; see error."}
+        }
+    }
+
+    @Published var discoveredEndpoints:[InferenceEndpointDiscovery.Hit]=[]
+
+    /// Scope-gated discovery of exposed AI inference endpoints on an in-scope host. Probes the
+    /// well-known LLM API paths (fail-closed: the host must be in the case AuthorizedScope),
+    /// classifies reachable ones, and records each as a sourceReport LEAD to test with the suite.
+    func discoverInferenceEndpoints(host:String){
+        guard !busy,!replayBusy else{return}
+        guard let activeState=session.researchCase else{error="No research case is active.";return}
+        let scope=engagementScope
+        discoveredEndpoints=[]
+        replayBusy=true;aiStatus="Discovering inference endpoints on \(host)…"
+        Task{@MainActor in
+            defer{replayBusy=false}
+            do{
+                var hits:[InferenceEndpointDiscovery.Hit]=[]
+                for path in InferenceEndpointDiscovery.candidatePaths(){
+                    for scheme in ["https","http"]{
+                        guard let url=URL(string:"\(scheme)://\(host)\(path)") else{continue}
+                        guard let r=try? await replayer.send(method:"GET",url:url,identity:ReplayIdentity(label:"discover",authorized:true,headers:[:]),scope:scope,timeout:15) else{continue}
+                        let text=String(decoding:r.body.prefix(4096),as:UTF8.self)
+                        if let kind=InferenceEndpointDiscovery.classify(path:path,status:r.status,body:text){
+                            hits.append(.init(path:path,status:r.status,kind:kind))
+                            let receipt=ToolReceipt(tool:"ai-discover",action:"endpoint",targets:[host],argument:"\(scheme)://\(host)\(path)",outcome:.succeeded,detail:"LEAD: exposed \(kind) endpoint at \(path) [HTTP \(r.status)]. Test it with the AI suite.")
+                            recordToolReceipt(receipt)
+                            break
+                        }
+                    }
+                }
+                discoveredEndpoints=hits
+                refreshNetwork()
+                aiStatus=hits.isEmpty ? "No inference endpoints found on \(host) (in scope)." : "Found \(hits.count) inference endpoint(s) on \(host): "+hits.map{"\($0.path) [\($0.kind)]"}.joined(separator:", ")
+            }catch{self.error=error.localizedDescription;aiStatus="Endpoint discovery failed; see error."}
+        }
+    }
+
+    @Published var bolaSignal:BolaSweep.Signal?
+
+    /// Object-ID (BOLA/IDOR) sweep: run each identity against each object ID (URL template with
+    /// `{id}`), scope-gated, capturing every response as a hostReceipt, and report where an
+    /// identity read an object it does not own. Authorization is per object (each identity
+    /// declares the IDs it owns). A cross-tenant read is a LEAD — promote via the evidence path.
+    func runBolaSweep(method:String,urlTemplate:String,objectIDs:[String],identities:[BolaIdentity]){
+        guard !busy,!replayBusy else{return}
+        guard let activeState=session.researchCase else{error="No research case is active.";return}
+        guard urlTemplate.contains("{id}") else{error="URL template must contain {id} (e.g. https://api.client.test/accounts/{id}).";return}
+        guard !objectIDs.isEmpty, !identities.isEmpty else{error="Declare at least one object ID and one identity.";return}
+        let scope=engagementScope
+        bolaSignal=nil
+        replayBusy=true;toolStatus="Running BOLA sweep (\(identities.count)×\(objectIDs.count) cells)…"
+        Task{@MainActor in
+            defer{replayBusy=false}
+            do{
+                let dir=store.directory.appendingPathComponent("bola-captures").appendingPathComponent(activeState.contract.id+"-"+String(UUID().uuidString.prefix(8)))
+                try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+                var cells:[BolaCell]=[];var pinnedIDs:[String]=[]
+                for idt in identities{
+                    for oid in objectIDs{
+                        let urlString=urlTemplate.replacingOccurrences(of:"{id}",with:oid)
+                        guard let url=URL(string:urlString) else{throw WorkbenchError.invalid("Invalid URL after substitution: \(urlString)")}
+                        let authorized=idt.owns(oid)
+                        let r=try await replayer.send(method:method,url:url,identity:ReplayIdentity(label:idt.label,authorized:authorized,headers:idt.headers),scope:scope)
+                        var target=session.researchCase ?? activeState
+                        let hash=try target.contract.digest()
+                        let safe="\(idt.label)-\(oid)".unicodeScalars.map{CharacterSet.alphanumerics.contains($0) ? Character($0):"-"}.reduce(into:""){$0.append($1)}
+                        let file=dir.appendingPathComponent("resp-\(safe).bin")
+                        try r.body.write(to:file,options:.atomic)
+                        try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file.path)
+                        let pin=try ResearchEvidence.Evidence.pin(id:"bola-\(safe)-\(String(UUID().uuidString.prefix(6)))",caseID:target.contract.id,contractHash:hash,kind:.hostReceipt,path:file.path)
+                        try target.ledger.addEvidence(pin)
+                        var updated=session;updated.researchCase=target;session=updated
+                        pinnedIDs.append(pin.id)
+                        cells.append(BolaCell(identity:idt.label,objectID:oid,authorized:authorized,status:r.status,bodySHA256:r.bodySHA256,bodyBytes:r.body.count))
+                    }
+                }
+                let signal=try BolaSweep.evaluate(cells)
+                bolaSignal=signal
+                let receipt=ToolReceipt(tool:"bola",action:"sweep",targets:[URL(string:urlTemplate.replacingOccurrences(of:"{id}",with:objectIDs[0]))?.host ?? ""],argument:"\(method) \(urlTemplate) × \(objectIDs.count) ids",outcome:.succeeded,detail:signal.detail+" Captured \(pinnedIDs.count) responses as evidence.")
+                recordToolReceipt(receipt)
+                try checkpointSession();persist();refreshNetwork()
+                toolStatus="BOLA sweep: "+(signal.present ? "\(signal.crossTenant.count) cross-tenant read(s) — lead; approve a claim citing the captures to promote.":"no cross-tenant access.")
+            }catch{self.error=error.localizedDescription;toolStatus="BOLA sweep failed; see error."}
+        }
+    }
+
+    @Published var variationSignal:TestVariationAnalysis.Signal?
+    @Published var detectionComparison:DetectionComparison.Result?
+
+    /// Observable defense markers in a response body. A small, documented set of well-known
+    /// block/challenge strings — a hint for classification, not proof of the defense's internals.
+    static func defenseMarkers(in body:Data) -> [String] {
+        let text=String(decoding:body.prefix(8192),as:UTF8.self).lowercased()
+        var m:[String]=[]
+        if text.contains("captcha")||text.contains("challenge-platform")||text.contains("cf-challenge"){m.append("challenge")}
+        if text.contains("access denied")||text.contains("request blocked")||text.contains("blocked by")||text.contains("forbidden"){m.append("waf-block")}
+        return m
+    }
+
+    /// Purple-team / detection-validation: send the same request as a recorded baseline and
+    /// under each recorded variation (scope-gated), capture every response as a hostReceipt, and
+    /// report whether the defense reacted differently. A differential is a LEAD — promote only
+    /// through the evidence + FindingVerification path. Variations are preserved TEST INPUTS, not
+    /// a stealth mode; Wampum observes response behavior only, not the defense's internal telemetry.
+    func runTestVariations(method:String,urlString:String,baseline:RequestVariation,variations:[RequestVariation],profileName:String="",environment:String="",profileVersion:Int=1){
+        guard !busy,!replayBusy else{return}
+        guard let activeState=session.researchCase else{error="No research case is active.";return}
+        guard let url=URL(string:urlString) else{error="Invalid URL.";return}
+        let scope=engagementScope
+        detectionComparison=nil
+        replayBusy=true;toolStatus="Running test variations (\(variations.count+1))…"
+        Task{@MainActor in
+            defer{replayBusy=false}
+            do{
+                let dir=store.directory.appendingPathComponent("variation-captures").appendingPathComponent(activeState.contract.id+"-"+String(UUID().uuidString.prefix(8)))
+                try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+                var pinnedIDs:[String]=[]
+                @MainActor func run(_ v:RequestVariation) async throws -> VariationObservation {
+                    if v.delayMs>0 { try await Task.sleep(nanoseconds: UInt64(v.delayMs)*1_000_000) }
+                    let identity=ReplayIdentity(label:v.label,authorized:true,headers:v.headerOverrides)
+                    let r=try await replayer.send(method:method,url:url,identity:identity,scope:scope)
+                    var target=session.researchCase ?? activeState
+                    let hash=try target.contract.digest()
+                    let safe=v.label.unicodeScalars.map{CharacterSet.alphanumerics.contains($0) ? Character($0):"-"}.reduce(into:""){$0.append($1)}
+                    let file=dir.appendingPathComponent("resp-\(safe).bin")
+                    try r.body.write(to:file,options:.atomic)
+                    try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file.path)
+                    let pin=try ResearchEvidence.Evidence.pin(id:"var-\(safe)-\(String(UUID().uuidString.prefix(6)))",caseID:target.contract.id,contractHash:hash,kind:.hostReceipt,path:file.path)
+                    try target.ledger.addEvidence(pin)
+                    var updated=session;updated.researchCase=target;session=updated
+                    pinnedIDs.append(pin.id)
+                    return VariationObservation(label:v.label,status:r.status,bodySHA256:r.bodySHA256,bodyBytes:r.body.count,markers:Self.defenseMarkers(in:r.body))
+                }
+                let baseObs=try await run(baseline)
+                var varObs:[VariationObservation]=[]
+                for v in variations{ varObs.append(try await run(v)) }
+                let signal=try TestVariationAnalysis.evaluate(baseline:baseObs,variations:varObs)
+                variationSignal=signal
+                let receipt=ToolReceipt(tool:"variation",action:"detection-test",targets:[url.host ?? ""],argument:"\(method) \(url.path)",outcome:.succeeded,detail:signal.detail)
+                recordToolReceipt(receipt)
+
+                // If this run names a profile, record it per engagement and compare to the prior run.
+                var comparisonNote=""
+                if !profileName.isEmpty{
+                    let env=environment.isEmpty ? "unspecified":environment
+                    let profile=DetectionProfile(name:profileName,method:method,url:urlString,baseline:baseline,variations:variations,version:profileVersion)
+                    let thisRun=DetectionRun(profileName:profileName,profileVersion:profileVersion,environment:env,at:Date(),baselineReaction:signal.baselineReaction,reactions:signal.reactions,evidenceIDs:pinnedIDs)
+                    let prior=try DetectionProfileStore(root:store.directory).record(profile:profile,run:thisRun,caseID:activeState.contract.id)
+                    if let prior{
+                        let cmp=try DetectionComparison.compare(prior:prior,new:thisRun)
+                        detectionComparison=cmp
+                        comparisonNote=" vs prior ("+prior.environment+"): "+(cmp.hasChanges ? "\(cmp.changes.count) change(s) [\(cmp.kind)] — lead.":"no change.")
+                    } else { comparisonNote=" (profile '\(profileName)' saved; first run — no prior to compare)." }
+                }
+
+                try checkpointSession();persist();refreshNetwork()
+                toolStatus="Test variations: "+(signal.detectionObserved ? "detection-differential on \(signal.differingVariations.joined(separator: ", ")) — lead; verify against the defense's telemetry and capture to promote.":"no differential; the defense did not distinguish the recorded inputs.")+comparisonNote
+            }catch{self.error=error.localizedDescription;toolStatus="Test variations failed; see error."}
+        }
+    }
+
+    // Authorization-persistence (temporal) check: does a credential outlive the authorization
+    // that justified it? Capture a baseline while valid, the operator revokes access / changes
+    // ownership out-of-band, then re-check with the SAME credential. A still-successful protected
+    // action after the change is the finding — proven by the two captured responses, not a claim.
+    struct AuthPersistenceBaseline { let observation: ResponseObservation; let evidenceID: String; let method: String; let url: String; let headers: [String:String]; let change: String }
+    var pendingAuthBaseline: AuthPersistenceBaseline?
+    @Published var authCheckBusy=false
+
+    private func captureReplay(method:String,url:URL,headers:[String:String],label:String,authorized:Bool,scope:AuthorizedScope,dir:URL) async throws -> (ResponseObservation,String) {
+        let identity=ReplayIdentity(label:label,authorized:authorized,headers:headers)
+        let r=try await replayer.send(method:method,url:url,identity:identity,scope:scope)
+        var target=session.researchCase!
+        let hash=try target.contract.digest()
+        let safe=label.unicodeScalars.map{CharacterSet.alphanumerics.contains($0) ? Character($0):"-"}.reduce(into:""){$0.append($1)}
+        let file=dir.appendingPathComponent("authchk-\(safe)-\(String(UUID().uuidString.prefix(6))).bin")
+        try r.body.write(to:file,options:.atomic);try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file.path)
+        let pin=try ResearchEvidence.Evidence.pin(id:"authchk-\(safe)-\(String(UUID().uuidString.prefix(6)))",caseID:target.contract.id,contractHash:hash,kind:.hostReceipt,path:file.path)
+        try target.ledger.addEvidence(pin)
+        var updated=session;updated.researchCase=target;session=updated
+        return (r.observation,pin.id)
+    }
+
+    func captureAuthorizationBaseline(method:String,urlString:String,label:String,headers:[String:String],change:String){
+        guard !busy,!authCheckBusy else{return}
+        guard session.researchCase != nil else{error="No research case is active.";return}
+        guard let url=URL(string:urlString) else{error="Invalid URL.";return}
+        guard !change.trimmingCharacters(in:.whitespaces).isEmpty else{error="State the authorization change you will make (e.g. 'revoke the test user').";return}
+        let scope=engagementScope
+        let dir=store.directory.appendingPathComponent("auth-checks").appendingPathComponent(session.researchCase!.contract.id)
+        authCheckBusy=true;toolStatus="Capturing authorization baseline…"
+        Task{@MainActor in
+            defer{authCheckBusy=false}
+            do{
+                try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+                let (obs,pid)=try await captureReplay(method:method,url:url,headers:headers,label:"before-\(change)",authorized:true,scope:scope,dir:dir)
+                pendingAuthBaseline=AuthPersistenceBaseline(observation:obs,evidenceID:pid,method:method,url:urlString,headers:headers,change:change)
+                try checkpointSession();persist();refreshNetwork()
+                toolStatus="Baseline captured (HTTP \(obs.status)). Now perform the change out-of-band: \(change). Then run the re-check."
+            }catch{self.error=error.localizedDescription;toolStatus="Baseline capture failed; see error."}
+        }
+    }
+
+    func recheckAuthorizationAfterChange(){
+        guard !busy,!authCheckBusy else{return}
+        guard let baseline=pendingAuthBaseline else{error="Capture an authorization baseline first.";return}
+        guard session.researchCase != nil,let url=URL(string:baseline.url) else{error="No active case or invalid baseline URL.";return}
+        let scope=engagementScope
+        let dir=store.directory.appendingPathComponent("auth-checks").appendingPathComponent(session.researchCase!.contract.id)
+        authCheckBusy=true;toolStatus="Re-checking with the same credential after the change…"
+        Task{@MainActor in
+            defer{authCheckBusy=false}
+            do{
+                // Same credential; now it SHOULD be denied. A success here is stale authorization.
+                let (after,afterPID)=try await captureReplay(method:baseline.method,url:url,headers:baseline.headers,label:"after-\(baseline.change)",authorized:false,scope:scope,dir:dir)
+                let signal=try ResponseComparison.evaluate([baseline.observation,after])
+                var receipt=ToolReceipt(tool:"auth-persistence",action:"recheck",targets:[url.host ?? ""],argument:"\(baseline.method) \(url.path) after: \(baseline.change)",outcome:.succeeded,detail:"\(signal.classification.rawValue): \(signal.detail) Before/after captures pinned: \(baseline.evidenceID), \(afterPID).")
+                recordToolReceipt(receipt)
+                pendingAuthBaseline=nil
+                try checkpointSession();persist();refreshNetwork()
+                let verdict = signal.classification == .brokenAccessControl ? "STALE AUTHORIZATION: the credential returned the identical protected resource after \(baseline.change)." : (signal.classification == .notDenied ? "Credential still succeeded after \(baseline.change); verify it returned protected data." : "Credential was denied after \(baseline.change) — authorization re-checked correctly.")
+                toolStatus=verdict+" Both captures pinned; approve a claim citing them to promote a Finding."
+            }catch{self.error=error.localizedDescription;toolStatus="Re-check failed; see error."}
+        }
+    }
+
+    /// Import Burp scanner issues for a task as ledger evidence. They are pinned as
+    /// `sourceReport` LEADS — not `hostReceipt` — so `FindingVerification` cannot promote
+    /// them on their own. The researcher reproduces and captures real evidence to promote.
+    func importBurpIssues(taskID:String){
+        guard !busy else{return}
+        guard let activeState=session.researchCase else{error="No research case to import evidence into.";return}
+        let scope=engagementScope
+        let base=burpBase;let key=burpAPIKey.isEmpty ? nil:burpAPIKey
+        toolStatus="Importing Burp issues for task \(taskID)…"
+        Task{
+            do{
+                let client=try BurpClient(base:URL(string:base) ?? URL(string:"http://127.0.0.1:1337")!,apiKey:key,guardrail:networkGuard)
+                let issues=try await client.scanIssues(taskID:taskID,scope:scope)
+                guard !issues.isEmpty else{toolStatus="No in-scope Burp issues for task \(taskID).";return}
+                let dir=store.directory.appendingPathComponent("tool-receipts").appendingPathComponent("burp-\(taskID)")
+                try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+                var imported=0,oob=0
+                for (i,issue) in issues.enumerated(){
+                    var target=session.researchCase ?? activeState
+                    let hash=try target.contract.digest()
+                    let file=dir.appendingPathComponent("issue-\(i).json")
+                    let enc=JSONEncoder();enc.outputFormatting=[.sortedKeys]
+                    try enc.encode(issue).write(to:file,options:.atomic)
+                    try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file.path)
+                    // OOB/Collaborator interaction = observed impact -> hostReceipt (promotable).
+                    // Pattern-match scanner issue = lead -> sourceReport (cannot promote alone).
+                    let kind:ResearchEvidence.Kind = issue.isOutOfBand ? .hostReceipt : .sourceReport
+                    let pin=try ResearchEvidence.Evidence.pin(id:"burp-\(taskID)-\(i)",caseID:target.contract.id,contractHash:hash,kind:kind,path:file.path)
+                    try target.ledger.addEvidence(pin)
+                    var updated=session;updated.researchCase=target;session=updated
+                    let framing = issue.isOutOfBand
+                        ? "OOB INTERACTION (Burp-observed out-of-band callback — observed impact): "
+                        : "LEAD (scanner, not a finding): "
+                    let where_ = issue.origin + (issue.path ?? "")
+                    var receipt=ToolReceipt(tool:"burp",action:issue.isOutOfBand ? "oob":"issue",targets:[URL(string:issue.origin)?.host ?? issue.origin],argument:issue.name,outcome:.succeeded,detail:framing+"\(issue.name) [\(issue.severity)/\(issue.confidence)] at \(where_). "+(issue.isOutOfBand ? "Observer: Burp. Pinned as hostReceipt — cite it in a claim to promote." : "Reproduce + capture to promote."))
+                    receipt.resultSHA256=pin.sha256
+                    recordToolReceipt(receipt);imported+=1; if issue.isOutOfBand { oob+=1 }
+                }
+                try checkpointSession();persist()
+                toolStatus="Imported \(imported) Burp issue(s): \(oob) OOB interaction(s) as hostReceipt evidence, \(imported-oob) scanner lead(s) as sourceReport. Approve a claim citing an OOB capture to promote a Finding."
+            }catch{self.error=error.localizedDescription;toolStatus="Burp issue import failed; see error."}
+        }
+    }
+
+    /// Import `semgrep --json` results as sourceReport LEADS (candidate code paths). Static
+    /// analysis points at code that might be reachable/impactful; the researcher verifies and
+    /// captures before any of it can back a Finding. Local source analysis — no network, no
+    /// scope gate; it only reads the results file the operator produced.
+    func importSemgrepResults(resultsPath:String){
+        guard !busy else{return}
+        guard let activeState=session.researchCase else{error="No research case to import into.";return}
+        let url=URL(fileURLWithPath:resultsPath)
+        toolStatus="Importing Semgrep results…"
+        Task{@MainActor in
+            do{
+                let data=try Data(contentsOf:url)
+                let findings=try SemgrepImport.findings(from:data)
+                guard !findings.isEmpty else{toolStatus="No Semgrep findings in \(url.lastPathComponent).";return}
+                let dir=store.directory.appendingPathComponent("tool-receipts").appendingPathComponent("semgrep-"+String(UUID().uuidString.prefix(8)))
+                try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+                var imported=0
+                for (i,f) in findings.enumerated(){
+                    var target=session.researchCase ?? activeState
+                    let hash=try target.contract.digest()
+                    let file=dir.appendingPathComponent("finding-\(i).json")
+                    let enc=JSONEncoder();enc.outputFormatting=[.sortedKeys]
+                    try enc.encode(f).write(to:file,options:.atomic)
+                    try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file.path)
+                    let pin=try ResearchEvidence.Evidence.pin(id:"semgrep-\(i)-"+String(UUID().uuidString.prefix(6)),caseID:target.contract.id,contractHash:hash,kind:.sourceReport,path:file.path)
+                    try target.ledger.addEvidence(pin)
+                    var updated=session;updated.researchCase=target;session=updated
+                    var receipt=ToolReceipt(tool:"semgrep",action:"finding",targets:[],argument:f.checkID,outcome:.succeeded,detail:"LEAD (static analysis, verify reachability/impact): \(f.checkID) [\(f.severity)] \(f.path):\(f.line). "+String(f.message.prefix(160)))
+                    receipt.resultSHA256=pin.sha256
+                    recordToolReceipt(receipt);imported+=1
+                }
+                try checkpointSession();persist()
+                toolStatus="Imported \(imported) Semgrep lead(s) as sourceReport. Verify reachability and capture to promote any to a Finding."
+            }catch{self.error=error.localizedDescription;toolStatus="Semgrep import failed; see error."}
+        }
+    }
+
+    /// Import `ffuf -o out.json` results as sourceReport LEADS (discovered paths). A reachable
+    /// path is a lead; impact is verified and captured before it can back a Finding.
+    func importFfufResults(resultsPath:String){
+        guard !busy else{return}
+        guard let activeState=session.researchCase else{error="No research case to import into.";return}
+        let url=URL(fileURLWithPath:resultsPath)
+        toolStatus="Importing ffuf results…"
+        Task{@MainActor in
+            do{
+                let data=try Data(contentsOf:url)
+                let results=try FfufImport.results(from:data)
+                guard !results.isEmpty else{toolStatus="No ffuf results in \(url.lastPathComponent).";return}
+                let dir=store.directory.appendingPathComponent("tool-receipts").appendingPathComponent("ffuf-"+String(UUID().uuidString.prefix(8)))
+                try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+                var imported=0
+                for (i,r) in results.enumerated(){
+                    var target=session.researchCase ?? activeState
+                    let hash=try target.contract.digest()
+                    let file=dir.appendingPathComponent("path-\(i).json")
+                    let enc=JSONEncoder();enc.outputFormatting=[.sortedKeys]
+                    try enc.encode(r).write(to:file,options:.atomic)
+                    try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file.path)
+                    let pin=try ResearchEvidence.Evidence.pin(id:"ffuf-\(i)-"+String(UUID().uuidString.prefix(6)),caseID:target.contract.id,contractHash:hash,kind:.sourceReport,path:file.path)
+                    try target.ledger.addEvidence(pin)
+                    var updated=session;updated.researchCase=target;session=updated
+                    var receipt=ToolReceipt(tool:"ffuf",action:"path",targets:[URL(string:r.url)?.host ?? ""],argument:r.input,outcome:.succeeded,detail:"LEAD (discovered path, verify impact): \(r.url) [HTTP \(r.status), \(r.length)b].")
+                    receipt.resultSHA256=pin.sha256
+                    recordToolReceipt(receipt);imported+=1
+                }
+                try checkpointSession();persist()
+                toolStatus="Imported \(imported) ffuf path(s) as sourceReport leads. Verify impact and capture to promote."
+            }catch{self.error=error.localizedDescription;toolStatus="ffuf import failed; see error."}
+        }
+    }
+
+    /// Import `nmap -oX out.xml` (or `-oG`) results as sourceReport LEADS (open services). A
+    /// reachable service is a lead; impact is verified and captured before it backs a Finding.
+    func importNmapResults(resultsPath:String){
+        guard !busy else{return}
+        guard let activeState=session.researchCase else{error="No research case to import into.";return}
+        let url=URL(fileURLWithPath:resultsPath)
+        toolStatus="Importing nmap results…"
+        Task{@MainActor in
+            do{
+                let data=try Data(contentsOf:url)
+                let results=try NmapImport.results(from:data)
+                guard !results.isEmpty else{toolStatus="No services in \(url.lastPathComponent).";return}
+                let dir=store.directory.appendingPathComponent("tool-receipts").appendingPathComponent("nmap-"+String(UUID().uuidString.prefix(8)))
+                try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
+                var imported=0
+                for (i,r) in results.enumerated(){
+                    var target=session.researchCase ?? activeState
+                    let hash=try target.contract.digest()
+                    let file=dir.appendingPathComponent("port-\(i).json")
+                    let enc=JSONEncoder();enc.outputFormatting=[.sortedKeys]
+                    try enc.encode(r).write(to:file,options:.atomic)
+                    try FileManager.default.setAttributes([.posixPermissions:0o600],ofItemAtPath:file.path)
+                    let pin=try ResearchEvidence.Evidence.pin(id:"nmap-\(i)-"+String(UUID().uuidString.prefix(6)),caseID:target.contract.id,contractHash:hash,kind:.sourceReport,path:file.path)
+                    try target.ledger.addEvidence(pin)
+                    var updated=session;updated.researchCase=target;session=updated
+                    let svc=[r.service,r.product].filter{!$0.isEmpty}.joined(separator:" ")
+                    let extra=[r.osGuess.isEmpty ? "":"OS: \(r.osGuess)",r.scriptOutput.isEmpty ? "":"script: \(r.scriptOutput)"].filter{!$0.isEmpty}.joined(separator:"; ")
+                    var receipt=ToolReceipt(tool:"nmap",action:"port",targets:[r.host],argument:"\(r.port)/\(r.proto)",outcome:.succeeded,detail:"LEAD (open service, verify impact): \(r.host) \(r.port)/\(r.proto) \(r.state)"+(svc.isEmpty ? "" : " — \(svc)")+(extra.isEmpty ? "":" [\(extra)]")+".")
+                    receipt.resultSHA256=pin.sha256
+                    recordToolReceipt(receipt);imported+=1
+                }
+                try checkpointSession();persist()
+                toolStatus="Imported \(imported) nmap service(s) as sourceReport leads. Verify impact and capture to promote."
+            }catch{self.error=error.localizedDescription;toolStatus="nmap import failed; see error."}
         }
     }
 
