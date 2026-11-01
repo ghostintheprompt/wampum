@@ -18,3 +18,15 @@
 - [ ] Run `swift test` and `git diff --check` after the accuracy work.
 - [ ] Review the native app's request preview, persistence, and source-review toggle behavior.
 - [ ] Refresh this file and `STATUS.md` from verified results; do not claim accuracy based on successful request transport.
+# Wampum follow-up — multi-file context
+
+- [x] Include all open editor tabs by default in model requests.
+- [x] Keep current-file-only and no-editor-source options one toggle away.
+- [x] Preserve the reviewed request preview and isolated source-review mode across multiple files.
+- [x] Enforce a 32 KB source-size cap with a clear pre-send error.
+- [x] Exercise default all-tabs, current-only override, history exclusion, and oversized-source behavior in app tests.
+- [x] Run a Coin Droppa local Qwen review with README, punchlist, and repo instructions attached.
+- [x] Run the complete Swift suite and build/launch a fresh QA app.
+- [ ] Commit and push the Wampum fix.
+
+Finding from the live run: multi-file context solved the missing-source problem, but the response still proposed an absent `scripts/build-site.js` and conflicted with the documented wallet-offline portfolio scope. Treat generated file plans as suggestions until checked against the repository and its release gates.

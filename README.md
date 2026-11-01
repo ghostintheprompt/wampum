@@ -10,7 +10,7 @@ Michael's name for the project comes from finding wampum in the mud and reeds ne
 
 ## First working build
 
-Open a project, browse text files, edit, and save with an original-content backup and a stale-write check. Ask an installed Ollama model a question; the open editor draft is included by default and can be excluded before sending. Keep scope and handoff notes in Case Memory. Review a complete-file response side by side, stage it, and save when ready. Run an explicit check command, inspect its actual output/exit code, and attach the result to the next prompt.
+Open a project, browse text files, edit, and save with an original-content backup and a stale-write check. Ask an installed Ollama model a question; all open editor tabs are included by default (up to 32 KB of source). Turn off **Include all open editor tabs** to send only the current file, or turn off editor context entirely. Keep scope and handoff notes in Case Memory. Review a complete-file response side by side, stage it, and save when ready. Run an explicit check command, inspect its actual output/exit code, and attach the result to the next prompt.
 
 Drafts, messages, scope, and notes save locally. Checkpoints preserve sessions before changing projects, files, proposals, or runs. Restore a checkpoint from the app. A corrupt session is retained for recovery; unreadable recovery storage blocks automatic writes.
 
@@ -55,7 +55,7 @@ A ninth network test starts a temporary local HTTP server returning a redirect t
 
 ## Content masking and separate proxy control
 
-Privacy has independent controls for model-content masking, approved-URL masking, and common secret-pattern detection. Add exact aliases as `real value => replacement`, one per line. Aliases are applied without cascading into one another. Every model request pauses at a frozen preview of the actual message contents, including system context, scope, checkpoint, selected history and explicitly attached editor. Confirming sends that snapshot; cancelling sends nothing. Original draft and transcript remain local and unmasked. Masked output is not automatically converted back into private values. Review code proposals because masking can change code behavior.
+Privacy has independent controls for model-content masking, approved-URL masking, and common secret-pattern detection. Add exact aliases as `real value => replacement`, one per line. Aliases are applied without cascading into one another. Every model request pauses at a frozen preview of the actual message contents, including system context, scope, checkpoint, selected history and attached editor tabs. **Isolate source review** is an explicit option that excludes prior chat history and asks the model to cite exact spans from attached files; this improves source traceability but does not verify whether an inference is correct. Confirming sends the reviewed snapshot; cancelling sends nothing. Original draft and transcript remain local and unmasked. Masked output is not automatically converted back into private values. Review code proposals because masking can change code behavior.
 
 Patterns cover selected credential formats, bearer strings, key/password assignments and private-key blocks; they do not discover all secrets or PII. Manual rules handle client names, private paths and identifiers. This is obfuscation, not encryption, DLP certification or anonymity. Alias rules and proxy settings are private-mode plaintext in `privacy.json`. Corrupt privacy configuration blocks new model/proxy requests instead of quietly discarding your rules.
 

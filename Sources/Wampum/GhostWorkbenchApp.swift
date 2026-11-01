@@ -146,6 +146,12 @@ struct WorkbenchView: View {
                         ScrollViewReader{proxy in ScrollView{LazyVStack(alignment:.leading,spacing:16){ForEach(model.session.messages){message in VStack(alignment:.leading,spacing:7){Text(message.role.uppercased()).font(.system(size:10,weight:.bold,design:.monospaced)).foregroundStyle(acid);Text(message.content).font(.system(size:13)).textSelection(.enabled);if let paths=message.imagePaths,!paths.isEmpty {Text("\(paths.count) image attachment(s) saved locally. Not resent automatically.").font(.caption2).foregroundStyle(.secondary)};if message.role=="assistant" {VStack(alignment:.leading,spacing:6){if message.stopReason == "length" {Text("INCOMPLETE — output limit reached").font(.caption.bold()).foregroundStyle(.orange)};if let tokens=message.outputTokens {Text("Output: \(tokens) tokens / stop: \(message.stopReason ?? "unknown")").font(.caption2).foregroundStyle(.secondary)};HStack{Button("Save Reply…"){model.saveMarkdownResponse(message.content)};if model.session.messages.last?.id == message.id {Button("Continue Reply"){model.prepareContinuation(message)}.disabled(model.busy || model.showRequestReview)}}}};if message.role=="assistant" && message.content.contains("```"){Button("Review File Proposal"){model.stageProposal(message.content)}}}.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(panel).clipShape(RoundedRectangle(cornerRadius:8)).id(message.id)}}}.onChange(of:model.session.messages.count){_,_ in if let id=model.session.messages.last?.id{proxy.scrollTo(id,anchor:.bottom)}}}
                         Text(model.contextStatus).font(.caption2).foregroundStyle(.secondary)
                         Toggle("Include open file as default context",isOn:$model.includeEditor).font(.caption)
+                        Toggle("Include all open editor tabs",isOn:$model.includeOpenFiles)
+                            .font(.caption)
+                            .disabled(!model.includeEditor || model.session.file.isEmpty)
+                        if model.includeOpenFiles && model.includeEditor && !model.session.file.isEmpty {
+                            Text("Attaches all \(model.editorDocuments.count) open drafts, up to 32 KB total.").font(.caption2).foregroundStyle(.secondary)
+                        }
                         Toggle("Isolate source review (exclude chat history)",isOn:$model.evidenceReviewMode)
                             .font(.caption)
                             .disabled(!model.includeEditor || model.session.file.isEmpty)
