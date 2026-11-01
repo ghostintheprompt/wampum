@@ -14,7 +14,7 @@ struct IntegrityPanel:View {
                 Button("Run Comparison",action:model.check).disabled(model.busy || model.baseline==nil).buttonStyle(.borderedProminent)
                 if model.busy{Button("Cancel",action:model.cancel)}
             }
-            Text("Unchanged bytes do not prove a safe model. This checks the selected files against a first observation, not their training history or intent.").font(.callout).foregroundStyle(.secondary)
+            Text("Compares selected files with a saved baseline. It does not test model behavior or training data.").font(.callout).foregroundStyle(.secondary)
             if !model.availableBaselines.isEmpty {
                 HStack{Text("Saved here").font(.caption);Menu("Choose a saved baseline"){ForEach(model.availableBaselines,id:\.path){url in Button(url.lastPathComponent){model.load(url)}}}.disabled(model.busy)}
             }

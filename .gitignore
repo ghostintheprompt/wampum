@@ -17,6 +17,3 @@ venv/
 
 # Private local sessions and model research receipts
 /private/
-
-# Private agent handoff entry point
-/CLAUDE.md

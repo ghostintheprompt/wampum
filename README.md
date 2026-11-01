@@ -1,4 +1,4 @@
-Public source prototype: https://github.com/ghostintheprompt/wampum · [checked release 0.1.1](https://github.com/ghostintheprompt/wampum/releases/tag/v0.1.1-prototype). This checkout retains private development history; public source is curated separately.
+Source code and development history: [github.com/ghostintheprompt/wampum](https://github.com/ghostintheprompt/wampum). Local sessions, private research, credentials, and generated output stay out of Git through `.gitignore`.
 
 # Wampum
 
@@ -37,9 +37,9 @@ A separate live local smoke test discovered `lukey03/Qwen3.5-9B-abliterated:late
 
 ## Still being built
 
-This version has a plain native text editor, reviewed response-to-file staging, a noninteractive check runner, scenario memory, image/OCR inputs, and reviewed single-step browser control through Playwright MCP. Syntax highlighting/LSP, Git review UI, streaming responses, general autonomous tool execution, project indexing, and a measured older-context summarizer remain implementation work. STATUS.md is the next-build queue.
+This version has a plain native text editor, reviewed response-to-file staging, a noninteractive check runner, scenario memory, image/OCR inputs, and reviewed single-step browser control through Playwright MCP. Syntax highlighting/LSP, Git review UI, streaming responses, general autonomous tool execution, project indexing, and a measured older-context summarizer remain implementation work. `STATUS.md` records the verified snapshot; `PUNCHLIST.md` tracks remaining work.
 
-MIT licensed. Curated public source: https://github.com/ghostintheprompt/wampum. Private state and development history stay separate.
+MIT licensed. This repository is Wampum's working source. Keep local session state and private project data outside tracked files.
 
 ## Network Guard
 
@@ -89,14 +89,14 @@ Add Images accepts up to two PNG/JPEG files (10 MB and 40 megapixels each), copi
 
 Verification: real installed Chrome + Playwright MCP + Qwen completed a reviewed click on a disposable loopback fixture and confirmed changed page text, capture, and console output. Image capability rejection, local OCR, frozen image review, and REST image payload serialization were tested. There is no installed vision-model inference result or live lab/grader result in this verification.
 
-## Codex / Claude Code controller
+## MCP controller
 
 Controller is an optional full-width workspace. It stays off on launch. Prepare Handoff shows the exact masked scenario scope, memory and checkpoint. Edit/review it, then Enable & Share Reviewed Handoff grants one controller 15 minutes, 20 action/checkpoint proposals, 120 calls and 256 KB of returned data. This bounds Wampum's interface, not the external provider's model-token bill. A controller's returned context may reach its model provider. Qwen remains local and no provider is called by Wampum's helper itself.
 
 After building, prepare the project-only connections:
 
 ```sh
-python3 scripts/configure-controllers.py
+python3 scripts/configure-codex.py
 ```
 
 Start Codex with this invocation-specific configuration:
@@ -105,7 +105,7 @@ Start Codex with this invocation-specific configuration:
 python3 scripts/codex-wampum.py
 ```
 
-The wrapper is needed for this installed Codex CLI: plain `codex -C ... mcp get wampum` did not discover the project entry. The wrapper's `mcp get wampum` successfully resolves the actual helper. It does not change global settings. The project TOML remains available for clients that support it. Claude Code recognizes the project .mcp.json entry and currently reports Pending approval: start Claude Code in this checkout and approve the project MCP entry through its normal UI. No client trust/approval was bypassed, no global account configuration was edited, and no external assistant turn was started during setup. Machine-specific client files are gitignored.
+The wrapper starts Codex with this project's helper configuration without changing global settings. The MCP controller stays off until a reviewed handoff is explicitly shared. Machine-specific client configuration is gitignored.
 
 The real helper is build/Wampum.app/Contents/MacOS/WampumController. Its stdio MCP server exposes status, approved handoff, browser-action proposal, observation request/read, checkpoint submission, and stop. It has no general shell/file tool and cannot allow its own proposal. Native Browser Allow/Deny uses the same validation and rejection gate as Qwen. A denied browser tool cannot be rephrased with new arguments to bypass that denial.
 
@@ -113,7 +113,7 @@ Observation requests return a ticket, not the page. Review/edit the exact observ
 
 The helper and GUI communicate through private local request/response files in Application Support/Wampum/controller. No TCP listener, account or public endpoint is added. This scopes the MCP interface; it does not isolate another same-account program from files its own macOS permissions already allow, or recall data already returned to a provider. Approved response files are consumed by the helper. Do not place these local state files in a public repository.
 
-Opt-in integration test: WAMPUM_CONTROLLER_LIVE=1 swift test --filter ControllerAppTests. It uses the actual helper and installed Playwright/Chrome on a loopback fixture, manually exercises the same operator-review methods, checks changed page state and receipts, then revokes. It is not a live Codex/Claude model session or a client-lab result.
+Opt-in integration test: `WAMPUM_CONTROLLER_LIVE=1 swift test --filter ControllerAppTests`. It uses the actual helper and installed Playwright/Chrome on a loopback fixture, exercises the operator-review flow, checks changed page state and receipts, then revokes. It does not call an external model provider.
 
 ## Browser execution receipts and recovery
 
@@ -216,7 +216,7 @@ Eight regressions cover multiple drafts/restart, active-only and background save
 
 Undo stacks and cursor/scroll positions are not persisted per tab. Switching constructs a separate editor view so undo cannot insert another file's buffer. Draft persistence uses the existing half-second session debounce and normal-quit save; abrupt termination before that save is not a zero-loss guarantee. Project content search and readable diffs are next; full LSP/Git/interactive terminal and long-session measurements remain open.
 
-Private default verification for this editor slice: 104 tests, 97 passed, seven opt-in skips, zero failures. Curated public source: 104 tests, 96 passed, eight skips (including the unavailable private-sibling integration), zero failures.
+Run `swift test` against this checkout for the current default suite. Tests that require a live model, local hardware, browser setup, or an explicitly scoped external target are opt-in and remain separate from fixture results.
 
 ## Model default and finding gate — October 29, 2026
 
@@ -225,6 +225,12 @@ The default model selector now resolves to the single authorized local model, `l
 `FindingGate` (`Sources/WorkbenchCore/FindingGate.swift`) is a deterministic lint over model output. It flags the tells of a premature finding: self-assigned or placeholder CVEs, severity asserted without demonstrated impact, finished-report framing on an unverified claim, invented taxonomy, self-estimated bounty amounts, unrelated-breach name-drops, and impact narrated as observed fact. It does not verify that a claim is true, execute anything, authenticate anyone, or suppress or edit output. The full reply is always saved and the local model stays unconstrained; the gate is advisory, like a linter. It runs on each chat reply and shows a status note when a reply is blocked. The chat system prompt was also brought up to the document generator's standard: separate observation, inference, assumption and unknowns, withhold severity until demonstrated, and do not invent taxonomy or CVEs. That is an accuracy instruction, not a refusal.
 
 `FindingGateTests` checks the lint against three real false-positive outputs, which it blocks, and one honest research note, which it passes with no flags. Full suite: 140 core plus 74 app, 214 tests, zero failures. The gate catches premature-finding framing, not semantic truth; demonstrating a claim on an authorized target remains a separate step. A dedicated verdict panel, enforced authorized-scope gating before browser or probe actions, and an evidence-driven path from hypothesis to finding remain open.
+
+### Coin Droppa release review with local Qwen — October 31, 2026
+
+The Qwen chat normally keeps its conversation history and attached editor context. When a source-only audit is useful, enable **Isolate source review (exclude chat history)**. That one request omits earlier turns and asks Qwen to ground project claims in exact quotes from the open editor draft. Turn it off for normal back-and-forth. This improves request provenance; it is not a truth detector.
+
+The opt-in `CoinDroppaReleaseLiveTests` uses Coin Droppa's release README as the supplied source and records the exact request and answer under `/private/tmp/Wampum-CoinDroppa-Evaluation/`. The live response is diagnostic, not a passing accuracy score. In the handoff trial Qwen still overclaimed and mislabeled evidence after prior turns were excluded. The next engineering step is an output-side source-quote check with visible flags, followed by a fixed release-review benchmark. Run fixture tests with `swift test`; run the live check with `WAMPUM_COIN_DROPPA_ROOT=/path/to/coin_droppa WAMPUM_COIN_DROPPA_RESULT_DIR=/private/tmp/Wampum-CoinDroppa-Evaluation swift test --filter CoinDroppaReleaseLiveTests`.
 
 ## Pentest orchestration toward client-ready use — October 30, 2026
 

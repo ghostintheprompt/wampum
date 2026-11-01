@@ -78,7 +78,8 @@ final class ControllerAppTests:XCTestCase {
         let start=try XCTUnwrap(line.range(of:"[ref="));let end=try XCTUnwrap(line[start.upperBound...].firstIndex(of:"]"));let target=String(line[start.upperBound..<end])
         let proposal=try await liveCall("wampum_propose_browser_action",.object(["tool":.string("browser_click"),"arguments":.object(["target":.string(target)]),"reason":.string("Click the local fixture evidence button once")]),model:m,connection:connection)
         let actionTicket=try XCTUnwrap(proposal["ticket"]?.string);XCTAssertFalse(b.busy)
-        let call=try XCTUnwrap(b.proposed);b.execute(call,model:m)
+        XCTAssertNotNil(b.proposed)
+        b.approveProposal(model:m)
         for _ in 0..<800 {if !b.busy{break};try await Task.sleep(nanoseconds:50_000_000)}
         XCTAssertTrue(b.snapshot.contains("Evidence recorded 742"),b.diagnostics)
         let status=try await liveCall("wampum_status",model:m,connection:connection)

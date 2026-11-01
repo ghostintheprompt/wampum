@@ -48,6 +48,16 @@ final class BrowserAppTests:XCTestCase {
         let call=BrowserCall(name:"browser_navigate",arguments:.object(["url":.string("http://127.0.0.1:8000")]))
         XCTAssertNoThrow(try b.validate(call));b.proposed=call;b.denyProposal(model:m);XCTAssertThrowsError(try b.validate(call));XCTAssertTrue(b.events.contains{$0.contains("REJECTED")})
     }
+    @MainActor func testExternalBrowserConnectionPausesForApproval()throws {
+        let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
+        let browser=m.browser
+        XCTAssertTrue(browser.localOnly)
+        browser.localOnly=false
+        browser.requestConnect(scenario:nil)
+        XCTAssertTrue(browser.showExternalWarning)
+        XCTAssertFalse(browser.connected)
+        XCTAssertFalse(browser.busy)
+    }
     @MainActor func testLiveBrowserTransportDescendantCleanup() async throws {
         guard ProcessInfo.processInfo.environment["WAMPUM_BROWSER_LIVE"] == "1" else {
             throw XCTSkip("Opt-in owned isolated Chrome cleanup test; no model call.")

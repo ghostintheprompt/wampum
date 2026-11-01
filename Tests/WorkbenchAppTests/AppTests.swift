@@ -62,9 +62,11 @@ final class AppTests:XCTestCase {
         let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
         let file=root.appendingPathComponent("facts.md");try Data("Verified project fact: board mode is Ocean.".utf8).write(to:file)
         m.models=[try JSONDecoder().decode(LocalModel.self,from:Data("{\"name\":\"fixture-qwen\"}".utf8))];m.session.model="fixture-qwen";m.session.prompt="Summarize the supplied project fact.";m.openFile("facts.md")
+        m.session.messages=[ChatMessage(role:"user",content:"old question"),ChatMessage(role:"assistant",content:"Old unsupported claim")]
         XCTAssertTrue(m.includeEditor);m.send();XCTAssertTrue(m.showRequestReview)
-        XCTAssertTrue(m.requestPreview.contains("UNTRUSTED EDITOR [facts.md]"));XCTAssertTrue(m.requestPreview.contains("Verified project fact: board mode is Ocean."));XCTAssertTrue(m.requestPreview.contains("prior assistant replies are conversation context"))
-        m.cancelRequestReview();m.includeEditor=false;m.send();XCTAssertFalse(m.requestPreview.contains("Verified project fact: board mode is Ocean."));XCTAssertTrue(m.requestPreview.contains("prior assistant replies are conversation context"))
+        XCTAssertTrue(m.requestPreview.contains("UNTRUSTED EDITOR [facts.md]"));XCTAssertTrue(m.requestPreview.contains("Verified project fact: board mode is Ocean."));XCTAssertTrue(m.requestPreview.contains("Old unsupported claim"));XCTAssertFalse(m.requestPreview.contains("EVIDENCE REVIEW MODE"));XCTAssertFalse(m.requestPreview.contains(root.path))
+        m.cancelRequestReview();m.evidenceReviewMode=true;m.send();XCTAssertTrue(m.requestPreview.contains("EVIDENCE REVIEW MODE"));XCTAssertFalse(m.requestPreview.contains("Old unsupported claim"));XCTAssertTrue(m.requestPreview.contains("Prior conversation is excluded"))
+        m.cancelRequestReview();m.includeEditor=false;m.send();XCTAssertFalse(m.requestPreview.contains("Verified project fact: board mode is Ocean."));XCTAssertTrue(m.requestPreview.contains("Old unsupported claim"))
     }
     @MainActor func testProxyReviewFreezesWithoutSending()throws{
         let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
