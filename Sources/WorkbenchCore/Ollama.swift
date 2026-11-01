@@ -68,7 +68,7 @@ public struct OllamaClient {
         return try JSONDecoder().decode(ChatReply.self, from: raw)
     }
     public static func responseTokenLimit(context:Int,inputEstimate:Int) -> Int {
-        min(4096,max(1,context-inputEstimate-512))
+        min(8192,max(1,context-inputEstimate-512))
     }
     public func unload(_ model: String) async throws { _ = try await request("api/generate", body:["model":model,"keep_alive":0]) }
 }

@@ -1,32 +1,38 @@
-# Wampum punch list
+# Wampum — November 1, 2026
 
-## In progress
+## Target
 
-- [x] Run the opt-in local Qwen review against Coin Droppa's release README and save request/response outside Git. Qwen got the local run instructions and several limits right, but invented a withdrawal animation and per-play fees, overstated the privacy implementation gap, and missed offline portfolio-build details.
-- [x] Build the release app and a separate QA app. Launch QA with disposable state; confirm the new source-review toggle is visible, off by default, and disabled until an editor file is open.
-- [ ] Use the QA app's request preview to confirm normal chat retains history and isolated review omits it while including the editor source.
+Use Coin Droppa as the real acceptance task: Wampum must supply the selected project sources to Qwen, produce a reviewable multi-file change, apply it only after review, and leave the verified files on disk. Coin Droppa is not a RAILGUN project and has no demo release target.
 
-## Accuracy work
+## Verified
 
-- [ ] Add a deterministic output check that extracts quoted evidence and confirms each quote appears in the exact attached source text.
-- [ ] Show unsupported or altered quotes beside the response. Describe this as quote validation, not fact verification.
-- [ ] Create fixed release-review cases from Coin Droppa README and punch list, with expected facts, explicit unknowns and prohibited inferences.
-- [ ] Measure Qwen on those cases before changing prompts, sampling settings or context size; preserve each failed output.
+- [x] The full default suite passed before the patch workflow change: 280 core and 107 app tests, with 16 opt-in skips and no failures.
+- [x] After the patch workflow change, the full suite passed: 284 core and 108 app tests, with 16 opt-in skips and no failures. `git diff --check` passed.
+- [x] November 1 current suite: 284 core and 111 app tests passed, 16 opt-in skips, zero failures. `git diff --check` passed.
+- [x] Coin Droppa's current site build publishes nine allowlisted files. Its engine smoke script passes ten checks for deterministic signatures, wallet reopening, engine startup, and balance API presence.
+- [x] Live Qwen source review returned eight quoted spans; one matched the attached sources and seven failed exact-source review. The output treated the game preview as deployable and proposed retaining RAILGUN, contrary to the owner's direction.
+- [x] `mixer.html` is 70,519 bytes. Wampum's source attachment limit is 32,000 bytes, so it could not ground a response in the main Coin Droppa file.
+- [x] Added reviewed unified-diff support for multi-file edits, new files, and requested deletions. It checks paths and patch applicability, rejects renames, binaries, symlinks, `.git`, and `.env` files, backs up changed originals locally, then opens surviving changed files in editor tabs.
+- [x] Focused patch tests passed: four core tests and one Workbench apply-to-disk test.
+- [x] A real local QA run confirmed the request preview and exposed malformed Qwen diffs. Patch review rejected both responses, including a behavior-changing diff; the disposable project remained unchanged.
+- [x] Built an isolated QA app with a private state directory and opened the Coin Droppa project in it. Normal Wampum data stays separate.
 
-## Release hygiene
+## Remaining
 
-- [ ] Run `swift test` and `git diff --check` after the accuracy work.
-- [ ] Review the native app's request preview, persistence, and source-review toggle behavior.
-- [ ] Refresh this file and `STATUS.md` from verified results; do not claim accuracy based on successful request transport.
-# Wampum follow-up — multi-file context
+- [x] Run the full Swift suite and `git diff --check` with reviewed patch support.
+- [x] Build and launch a separate QA app; open Coin Droppa without touching the owner's active Wampum session.
+- [ ] Through Wampum, complete the authorized Coin Droppa cleanup task from its active brief. Inspect every proposed file and keep the project's requested direction consistent; do not treat malformed or unreviewed model output as a change.
+- [ ] Verify the changed Coin Droppa files on disk, inspect the complete diff, and run the relevant build and tests.
+- [x] Reconcile README and status docs with the verified result, including the live Qwen failure and the fail-closed patch-review result.
+- [ ] Complete Coin Droppa through Wampum, verify the changed files and project checks, then publish that project result. Coin Droppa remains unfinished.
 
-- [x] Include all open editor tabs by default in model requests.
-- [x] Keep current-file-only and no-editor-source options one toggle away.
-- [x] Preserve the reviewed request preview and isolated source-review mode across multiple files.
-- [x] Enforce a 32 KB source-size cap with a clear pre-send error.
-- [x] Exercise default all-tabs, current-only override, history exclusion, and oversized-source behavior in app tests.
-- [x] Run a Coin Droppa local Qwen review with README, punchlist, and repo instructions attached.
-- [x] Run the complete Swift suite and build/launch a fresh QA app.
-- [ ] Commit and push the Wampum fix.
+Qwen's live review was an accuracy failure. The Workbench now has a multi-file patch path that can address Coin Droppa's file-size and single-file-proposal limits; the Coin Droppa acceptance task has not passed yet.
 
-Finding from the live run: multi-file context solved the missing-source problem, but the response still proposed an absent `scripts/build-site.js` and conflicted with the documented wallet-offline portfolio scope. Treat generated file plans as suggestions until checked against the repository and its release gates.
+## Usability workflow — verified November 1
+
+- Normal requests attach only the active editor file; all-open-tab and source-review switches are collapsed under **Context options** and start off.
+- **Build from MD** uses a saved Markdown brief, gathers local project sources while excluding generated/vendor folders and lockfiles, prioritizes paths named in the brief, previews the exact request, and routes the returned diff through **Review Patch** / **Apply Reviewed Patch**.
+- The build context is limited to 84,000 source bytes and selects a 32K model context; omitted paths are listed in the exact request. Context preflight and patch apply/backup are covered by tests.
+- A fresh QA app opened the disposable project, listed its files, opened the brief, discovered local Qwen, and displayed the exact frozen request. The local model returned malformed diffs on two attempts; Review Patch rejected both and the fixture's `app.py` remained byte-for-byte unchanged.
+- The first QA instance had a stored project path but no readable file list. File enumeration now reports failures instead of silently returning an empty list, and the explorer explains how to reselect an inaccessible folder.
+- Coin Droppa remains the full acceptance task. Its release changes have not been applied or verified; do not mark that project ready based on Wampum transport or patch-parser tests.

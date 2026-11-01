@@ -25,8 +25,17 @@ public struct Workspace {
         return try String(contentsOf: url, encoding: .utf8)
     }
     public func files() throws -> [String] {
-        let ignored: Set<String> = [".git", "node_modules", ".build", ".venv", "venv", "dist", ".next", "build", ".DS_Store"]
-        guard let enumerator = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey], options: [.skipsHiddenFiles]) else { return [] }
+        let ignored: Set<String> = [".git", "node_modules", ".build", ".venv", "venv", "dist", "artifacts", "cache", "coverage", ".next", "build", ".DS_Store"]
+        var enumerationError: Error?
+        guard let enumerator = FileManager.default.enumerator(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles],
+            errorHandler: { _, error in
+                enumerationError = error
+                return false
+            }
+        ) else { throw WorkbenchError.invalid("Could not open the selected project folder for reading.") }
         var output: [String] = []
         for case let url as URL in enumerator {
             let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
@@ -38,6 +47,9 @@ public struct Workspace {
                 output.append(String(canonical.path.dropFirst(prefix.count)))
             }
             if output.count >= 2000 { break }
+        }
+        if let enumerationError {
+            throw WorkbenchError.invalid("Could not finish reading the selected project folder: \(enumerationError.localizedDescription)")
         }
         return output.sorted()
     }
@@ -61,6 +73,7 @@ public struct ChatMessage: Codable, Identifiable, Equatable {
     public var imagePaths: [String]? = nil
     public var stopReason: String? = nil
     public var outputTokens: Int? = nil
+    public var sourceQuoteReview: SourceQuoteReview? = nil
     public init(role: String, content: String) { self.role = role; self.content = content }
 }
 public struct Session: Codable {
@@ -72,6 +85,7 @@ public struct Session: Codable {
     public var notes = ""
     public var scope = ""
     public var prompt = ""
+    public var attachedCheckOutputs: [String]? = nil
     public var model = ""
     public var context = 8192
     public var messages: [ChatMessage] = []

@@ -10,11 +10,21 @@ Michael's name for the project comes from finding wampum in the mud and reeds ne
 
 ## First working build
 
-Open a project, browse text files, edit, and save with an original-content backup and a stale-write check. Ask an installed Ollama model a question; all open editor tabs are included by default (up to 32 KB of source). Turn off **Include all open editor tabs** to send only the current file, or turn off editor context entirely. Keep scope and handoff notes in Case Memory. Review a complete-file response side by side, stage it, and save when ready. Run an explicit check command, inspect its actual output/exit code, and attach the result to the next prompt.
+Open a project, create or open a Markdown brief, and write the change you want. **Build from MD** prepares a local model request from the saved brief and relevant project code; it prioritizes application entrypoints and build manifests, then source paths named in the brief, and skips vendored code, generated folders, and dependency lockfiles. It caps attached project text at 84 KB and selects the 32K context profile. The request preview shows the exact files and text sent, and lists omitted paths. If the project folder cannot be read, Wampum shows the access error and tells you to reselect it. If system context still exceeds the model window, Wampum rejects the request without sending it. Model output can be wrong or malformed: **Review Patch** checks paths and hunks and rejects invalid diffs without writing files; **Apply Reviewed Patch** writes only after your review and backs up existing files locally.
+
+For ordinary questions, Wampum includes only the active editor file by default. Open **Context options** to include every open editor tab, exclude editor context, or enable source-only quote review. Source-only review is off at launch. Keep scope and handoff notes in Case Memory. Run an explicit check command, inspect its actual output/exit code, and attach the result to the next prompt.
 
 Drafts, messages, scope, and notes save locally. Checkpoints preserve sessions before changing projects, files, proposals, or runs. Restore a checkpoint from the app. A corrupt session is retained for recovery; unreadable recovery storage blocks automatic writes.
 
-The starting context profile is 8K, with 4K/16K/32K options. Input-size estimates are approximate, not tokenizer counts. Older complete turns can be omitted to fit a request; the full transcript stays on disk. Oversized current input is rejected rather than silently truncated. Keep a concise checkpoint to carry old work forward. Actual prompt/output counts appear when Ollama supplies them. Thinking is offered only when the inspected model reports it.
+For an exact-source review, open **Context options** and enable **Isolate source review**. That request excludes chat history and freezes the attached editor drafts plus any explicitly attached check output. Wampum checks Markdown blockquotes in the reply against those exact frozen texts and shows missing or misattributed quotes. This is an exact-text citation check; it does not verify a claim, source truth, or that the draft matches the current file on disk.
+
+For code changes, ask for a complete replacement for one file or a unified Git diff for multiple files. A large file can be removed with a separate `WAMPUM DELETE FILE: relative/path` line instead of reproducing its contents. **Review Patch** checks paths and hunks against the current project, shows the exact operations, and applies only after you choose **Apply Reviewed Patch**. Existing files are backed up under Wampum's local state; changed files open in editor tabs. Text additions and deletions are supported. Renames, binary patches, symbolic links, `.git`, and `.env` paths are rejected. Wampum does not run the patch or proposed code automatically.
+
+### Model output QA — November 1, 2026
+
+In a live local test on a disposable Python project, Qwen returned malformed diffs twice. The first also changed existing behavior. Wampum rejected both during patch review; readback confirmed the project file stayed unchanged. This verifies the review gate, not Qwen's coding accuracy. The Coin Droppa acceptance task remains open; no Coin Droppa release change is claimed here.
+
+The starting context profile is 8K, with 4K/16K/32K options. **Build from MD** selects the 32K profile for that project build request. Input-size estimates are approximate, not tokenizer counts. Older complete turns can be omitted to fit a request; the full transcript stays on disk. Oversized current input is rejected rather than silently truncated. For a large file, use the local check runner to attach the exact source ranges needed; Wampum labels captured output separately from editor drafts. Keep a concise checkpoint to carry old work forward. Actual prompt/output counts appear when Ollama supplies them. Thinking is offered only when the inspected model reports it.
 
 ## Build and launch
 
@@ -26,6 +36,18 @@ scripts/build-app.sh
 ```
 
 Open `build/Wampum.app` in Finder. It is locally ad-hoc signed, not notarized or distributed through the App Store. The model client accepts only localhost Ollama and refuses HTTP redirects. Discover retrieves real installed tags; completion models are kept separate from embedding models. No model is downloaded or renamed.
+
+Build an isolated QA instance without sharing the normal Wampum session by setting its own app identity and state directory:
+
+```sh
+WAMPUM_APP_OUTPUT="$PWD/build/Wampum-QA.app" \
+WAMPUM_APP_NAME="Wampum QA" \
+WAMPUM_BUNDLE_ID=com.ghostintheprompt.wampum.qa \
+WAMPUM_STATE_DIR="/private/tmp/Wampum-QA-State" \
+scripts/build-app.sh
+```
+
+The state path is embedded in that QA app's launch environment. The ordinary app keeps using `~/Library/Application Support/Wampum/`.
 
 Local state: `~/Library/Application Support/Wampum/`. This includes session JSON, checkpoint JSON, file backups, and command logs. These files contain your work, in plaintext. `WAMPUM_STATE_DIR` can redirect state for development. Project edits occur only through Save. Check commands run with your ordinary macOS account. Run Local now restricts direct outbound sockets to loopback through the built-in sandbox-exec utility. External network access requires a frozen-command one-run confirmation. The runner remains neither a general security sandbox, a PTY terminal, nor a process-tree containment service. Checks now own a process group. Stop sends TERM and a short KILL fallback, and normal completion cleans remaining group members before reaping the leader. Detached children can escape. Force quit/power loss can leave commands alive; restart preserves evidence without replaying commands or signaling saved PIDs.
 

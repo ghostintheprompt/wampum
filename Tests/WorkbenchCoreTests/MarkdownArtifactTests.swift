@@ -32,8 +32,9 @@ final class MarkdownArtifactTests: XCTestCase {
         XCTAssertFalse(MarkdownArtifact.hasUnclosedFence(exported))
     }
     func testResponseBudgetLeavesContextHeadroom() throws {
-        XCTAssertEqual(OllamaClient.responseTokenLimit(context:8192,inputEstimate:1000),4096)
+        XCTAssertEqual(OllamaClient.responseTokenLimit(context:8192,inputEstimate:1000),6680)
         XCTAssertEqual(OllamaClient.responseTokenLimit(context:4096,inputEstimate:2000),1584)
+        XCTAssertEqual(OllamaClient.responseTokenLimit(context:32768,inputEstimate:24000),8192)
         let packet=try ContextPacket.build(system:"Research",history:[ChatMessage(role:"user",content:"Write a report")],context:8192,outputReserve:4096)
         XCTAssertLessThanOrEqual(packet.estimatedTokens,4096)
     }

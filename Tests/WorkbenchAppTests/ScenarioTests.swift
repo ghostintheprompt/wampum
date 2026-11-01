@@ -17,7 +17,7 @@ final class ScenarioTests:XCTestCase {
     @MainActor func testScenarioIsolationRestartAndGeneralRecovery() throws {
         let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
         m.session.notes="general notes";m.session.draft="general unsaved draft"
-        m.switchScenario("BB1S1");m.session.lab?.markers="A_ONLY";m.session.messages=[ChatMessage(role:"user",content:"A private conversation")];m.session.draft="A unsaved draft";m.session.prompt="A pending prompt";m.session.scope="A scope"
+        m.switchScenario("BB1S1");XCTAssertTrue(m.session.notes.contains("Browser workspace"));XCTAssertFalse(m.session.notes.contains("no browser tools"));m.session.lab?.markers="A_ONLY";m.session.messages=[ChatMessage(role:"user",content:"A private conversation")];m.session.draft="A unsaved draft";m.session.prompt="A pending prompt";m.session.scope="A scope"
         m.switchScenario("WB2S5");XCTAssertTrue(m.session.messages.isEmpty);XCTAssertEqual(m.session.lab?.markers,"");XCTAssertEqual(m.session.scope,"")
         m.session.lab?.markers="B_ONLY";m.persist()
         let restarted=WorkbenchModel(stateDirectory:m.store.directory);XCTAssertEqual(restarted.session.lab?.id,"WB2S5");XCTAssertEqual(restarted.labs.count,2)

@@ -46,5 +46,11 @@ PLIST
 /usr/bin/plutil -replace CFBundleIdentifier -string "${WAMPUM_BUNDLE_ID:-com.ghostintheprompt.wampum}" "$APP/Contents/Info.plist"
 /usr/bin/plutil -replace CFBundleName -string "${WAMPUM_APP_NAME:-Wampum}" "$APP/Contents/Info.plist"
 /usr/bin/plutil -replace CFBundleDisplayName -string "${WAMPUM_APP_NAME:-Wampum}" "$APP/Contents/Info.plist"
+if [ -n "${WAMPUM_STATE_DIR:-}" ]; then
+    mkdir -p "$WAMPUM_STATE_DIR"
+    chmod 700 "$WAMPUM_STATE_DIR"
+    /usr/bin/plutil -insert LSEnvironment -dictionary "$APP/Contents/Info.plist"
+    /usr/bin/plutil -insert LSEnvironment.WAMPUM_STATE_DIR -string "$WAMPUM_STATE_DIR" "$APP/Contents/Info.plist"
+fi
 codesign --force --sign - "$APP"
 printf '%s\n' "$APP"

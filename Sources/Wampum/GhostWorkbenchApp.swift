@@ -66,15 +66,22 @@ struct WorkbenchView: View {
                     Text("EXPLORER").font(.system(size:11,weight:.bold,design:.monospaced)).foregroundStyle(acid)
                     Text(model.session.project.isEmpty ? "No project selected" : URL(fileURLWithPath:model.session.project).lastPathComponent).font(.headline)
                     TextField("Filter files",text:$query).textFieldStyle(.roundedBorder)
-                    List(model.files.filter{query.isEmpty || $0.localizedCaseInsensitiveContains(query)},id:\.self,selection:Binding<String?>(get:{model.session.file.isEmpty ? nil:model.session.file},set:{if let path=$0{model.openFile(path)}})){file in Text(file).font(.system(size:11,design:.monospaced)).lineLimit(2).tag(file)}.listStyle(.plain)
+                    if model.files.isEmpty {
+                        Text(model.session.project.isEmpty ? "Open a project folder to list its files." : "No project files are readable. Choose Open Project and select this folder again.")
+                            .font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,8)
+                    } else if !query.isEmpty && !model.files.contains(where:{$0.localizedCaseInsensitiveContains(query)}) {
+                        Text("No files match this filter.").font(.caption).foregroundStyle(.secondary).frame(maxWidth:.infinity,alignment:.leading).padding(.vertical,8)
+                    } else {
+                        List(model.files.filter{query.isEmpty || $0.localizedCaseInsensitiveContains(query)},id:\.self,selection:Binding<String?>(get:{model.session.file.isEmpty ? nil:model.session.file},set:{if let path=$0{model.openFile(path)}})){file in Text(file).font(.system(size:11,design:.monospaced)).lineLimit(2).tag(file)}.listStyle(.plain)
+                    }
                     HStack{Button("New Case",action:model.newFile);Button("Refresh",action:model.refreshFiles)}
                     Text("First 2,000 nonhidden files. Binary files stay out of the editor.").font(.caption2).foregroundStyle(.secondary)
                 }.padding(12).frame(minWidth:190,idealWidth:230,maxWidth:320).background(panel)
                 VSplitView {
                     Group { if surface=="Browser" {BrowserPanel(model:model)} else {VStack(spacing:0){
                         EditorTabStrip(model:model)
-                        HStack{Text(model.session.file.isEmpty ? "EDITOR" : model.session.file).font(.system(size:12,design:.monospaced));if model.dirty {Text("DRAFT").font(.caption2).foregroundStyle(acid)};Spacer();Button("Save",action:model.saveFile).disabled(model.session.file.isEmpty)}.padding(10).background(panel)
-                        if model.session.file.isEmpty {VStack(alignment:.leading,spacing:18){Text("A place to build.\nA record of what held up.").font(.system(size:32,weight:.semibold));Text("Open a project, choose a file, and bring Qwen the context it actually needs.").foregroundStyle(.secondary);Button("Open a project…",action:model.chooseProject)}.frame(maxWidth:.infinity,maxHeight:.infinity).padding(36)}
+                        HStack{Text(model.session.file.isEmpty ? "EDITOR" : model.session.file).font(.system(size:12,design:.monospaced));if model.dirty {Text("DRAFT").font(.caption2).foregroundStyle(acid)};Spacer();if model.session.file.lowercased().hasSuffix(".md"){Button("Build from MD",action:model.buildFromMarkdownBrief).disabled(model.busy || model.running || model.showRequestReview || model.showPatchReview || model.dirty || model.session.project.isEmpty)};Button("Save",action:model.saveFile).disabled(model.session.file.isEmpty)}.padding(10).background(panel)
+                        if model.session.file.isEmpty {VStack(alignment:.leading,spacing:18){Text("Open a project, choose a file, and review changes here.").foregroundStyle(.secondary);Button("Open a project…",action:model.chooseProject)}.frame(maxWidth:.infinity,maxHeight:.infinity).padding(36)}
                         else {CodeEditor(text:$model.session.draft).id(model.session.project+":"+model.session.file)}
                     }}}.frame(minHeight:270)
                     VStack(alignment:.leading,spacing:8){
@@ -102,7 +109,7 @@ struct WorkbenchView: View {
                         Text("NETWORK GUARD").font(.headline).foregroundStyle(acid)
                         Text("No sign-in. No analytics SDK. No telemetry uploader. This ledger is stored locally.").font(.caption)
                         Text("Model requests: loopback only. Redirects refused. Commands: direct outgoing sockets restricted until a one-run grant.").font(.caption)
-                        Text("Coverage limit: not a system-wide firewall. Local Ollama, DNS/system brokers, external apps, and allowed commands can relay traffic. MCP/browser enforcement is not implemented yet.").font(.caption).foregroundStyle(.secondary)
+                        Text("This ledger is not a system firewall. Local services, DNS/system brokers, external apps, and allowed commands can relay traffic. Browser and command controls are separate; review their approvals and receipts individually.").font(.caption).foregroundStyle(.secondary)
                         Text("APPROVED PROXY TOOL").font(.caption).foregroundStyle(acid)
                         TextField("HTTPS URL to inspect",text:$model.externalURL).textFieldStyle(.roundedBorder)
                         TextField("socks5://127.0.0.1:1080 or http://host:port",text:$model.privacy.proxyURL).textFieldStyle(.roundedBorder)
@@ -143,21 +150,20 @@ struct WorkbenchView: View {
                         }
                         Text("Export saves existing messages. Build creates a document from a source manifest.")
                             .font(.caption2).foregroundStyle(.secondary)
-                        ScrollViewReader{proxy in ScrollView{LazyVStack(alignment:.leading,spacing:16){ForEach(model.session.messages){message in VStack(alignment:.leading,spacing:7){Text(message.role.uppercased()).font(.system(size:10,weight:.bold,design:.monospaced)).foregroundStyle(acid);Text(message.content).font(.system(size:13)).textSelection(.enabled);if let paths=message.imagePaths,!paths.isEmpty {Text("\(paths.count) image attachment(s) saved locally. Not resent automatically.").font(.caption2).foregroundStyle(.secondary)};if message.role=="assistant" {VStack(alignment:.leading,spacing:6){if message.stopReason == "length" {Text("INCOMPLETE — output limit reached").font(.caption.bold()).foregroundStyle(.orange)};if let tokens=message.outputTokens {Text("Output: \(tokens) tokens / stop: \(message.stopReason ?? "unknown")").font(.caption2).foregroundStyle(.secondary)};HStack{Button("Save Reply…"){model.saveMarkdownResponse(message.content)};if model.session.messages.last?.id == message.id {Button("Continue Reply"){model.prepareContinuation(message)}.disabled(model.busy || model.showRequestReview)}}}};if message.role=="assistant" && message.content.contains("```"){Button("Review File Proposal"){model.stageProposal(message.content)}}}.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(panel).clipShape(RoundedRectangle(cornerRadius:8)).id(message.id)}}}.onChange(of:model.session.messages.count){_,_ in if let id=model.session.messages.last?.id{proxy.scrollTo(id,anchor:.bottom)}}}
+                        ScrollViewReader{proxy in ScrollView{LazyVStack(alignment:.leading,spacing:16){ForEach(model.session.messages){message in VStack(alignment:.leading,spacing:7){Text(message.role.uppercased()).font(.system(size:10,weight:.bold,design:.monospaced)).foregroundStyle(acid);Text(message.content).font(.system(size:13)).textSelection(.enabled);if let review=message.sourceQuoteReview{SourceQuoteReviewPanel(review:review)};if let paths=message.imagePaths,!paths.isEmpty {Text("\(paths.count) image attachment(s) saved locally. Not resent automatically.").font(.caption2).foregroundStyle(.secondary)};if message.role=="assistant" {VStack(alignment:.leading,spacing:6){if message.stopReason == "length" {Text("INCOMPLETE — output limit reached").font(.caption.bold()).foregroundStyle(.orange)};if let tokens=message.outputTokens {Text("Output: \(tokens) tokens / stop: \(message.stopReason ?? "unknown")").font(.caption2).foregroundStyle(.secondary)};HStack{Button("Save Reply…"){model.saveMarkdownResponse(message.content)};if message.content.contains("diff --git ") || message.content.contains("WAMPUM DELETE FILE: "){Button("Review Patch"){model.stagePatch(message.content)}};if model.session.messages.last?.id == message.id {Button("Continue Reply"){model.prepareContinuation(message)}.disabled(model.busy || model.showRequestReview)}}}};if message.role=="assistant" && message.content.contains("```"){Button("Review File Proposal"){model.stageProposal(message.content)}}}.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(panel).clipShape(RoundedRectangle(cornerRadius:8)).id(message.id)}}}.onChange(of:model.session.messages.count){_,_ in if let id=model.session.messages.last?.id{proxy.scrollTo(id,anchor:.bottom)}}}
                         Text(model.contextStatus).font(.caption2).foregroundStyle(.secondary)
-                        Toggle("Include open file as default context",isOn:$model.includeEditor).font(.caption)
-                        Toggle("Include all open editor tabs",isOn:$model.includeOpenFiles)
-                            .font(.caption)
-                            .disabled(!model.includeEditor || model.session.file.isEmpty)
-                        if model.includeOpenFiles && model.includeEditor && !model.session.file.isEmpty {
-                            Text("Attaches all \(model.editorDocuments.count) open drafts, up to 32 KB total.").font(.caption2).foregroundStyle(.secondary)
+                        DisclosureGroup("Context options") {
+                            Toggle("Include active editor file",isOn:$model.includeEditor).font(.caption)
+                            Toggle("Include all open editor tabs",isOn:$model.includeOpenFiles).font(.caption).disabled(!model.includeEditor || model.session.file.isEmpty)
+                            if model.includeOpenFiles && model.includeEditor && !model.session.file.isEmpty {
+                                Text("Attaches all \(model.editorDocuments.count) open drafts, up to 32 KB total.").font(.caption2).foregroundStyle(.secondary)
+                            }
+                            Toggle("Isolate source review",isOn:$model.evidenceReviewMode).font(.caption).disabled(!model.includeEditor || model.session.file.isEmpty)
+                            if model.evidenceReviewMode && model.includeEditor && !model.session.file.isEmpty {
+                                Text("Excludes chat history. Uses attached editor drafts and check output as evidence.").font(.caption2).foregroundStyle(.secondary)
+                            }
                         }
-                        Toggle("Isolate source review (exclude chat history)",isOn:$model.evidenceReviewMode)
-                            .font(.caption)
-                            .disabled(!model.includeEditor || model.session.file.isEmpty)
-                        if model.evidenceReviewMode && model.includeEditor && !model.session.file.isEmpty {
-                            Text("Uses the attached editor draft as the primary source for this request.").font(.caption2).foregroundStyle(.secondary)
-                        }
+                        .font(.caption)
                         ImageAttachmentTray(model:model)
                         TextEditor(text:$model.session.prompt).font(.system(size:13)).frame(height:100).overlay(RoundedRectangle(cornerRadius:5).stroke(.gray.opacity(0.4)))
                         HStack{Text("Saved locally. No sign-in.").font(.caption2).foregroundStyle(.secondary);Spacer();if model.busy{ProgressView().controlSize(.small);Button("Stop",action:model.stopGeneration)}else{Button("Review & Send",action:model.send).buttonStyle(.borderedProminent).tint(acid).foregroundStyle(.black).keyboardShortcut(.return,modifiers:.command)}}
@@ -201,6 +207,7 @@ struct WorkbenchView: View {
             }.onAppear{documentReviewTab="Chapter"}.padding(22).frame(width:950,height:700)
         }
         .sheet(isPresented:$model.showProposal){VStack(alignment:.leading,spacing:12){Text("Review replacement for \(model.session.file)").font(.headline);Text("This stages the proposed contents. It does not write to disk until you Save. Existing draft is checkpointed.").font(.caption);HSplitView{VStack{Text("CURRENT DRAFT");ScrollView{Text(model.session.draft).font(.system(size:11,design:.monospaced)).textSelection(.enabled)}};VStack{Text("PROPOSED");TextEditor(text:$model.proposal).font(.system(size:11,design:.monospaced))}};HStack{Button("Cancel"){model.showProposal=false};Spacer();Button("Stage in Editor",action:model.applyProposal).disabled(model.session.file.isEmpty)}}.padding(20).frame(width:1000,height:650)}
+        .sheet(isPresented:$model.showPatchReview){VStack(alignment:.leading,spacing:12){Text("Review multi-file patch").font(.title2);Text(model.patchPaths.joined(separator:"\n")).font(.system(size:12,design:.monospaced)).textSelection(.enabled);Text("The patch was checked against the current project. Apply writes these changes to disk, backs up existing files locally, and opens changed files in editor tabs.").font(.caption);ScrollView{Text(model.patchPreview).font(.system(size:11,design:.monospaced)).textSelection(.enabled).frame(maxWidth:.infinity,alignment:.leading)}.border(.secondary);HStack{Button("Cancel",action:model.cancelPatchReview);Spacer();Button("Apply Reviewed Patch",action:model.applyReviewedPatch).buttonStyle(.borderedProminent)}}.padding(20).frame(width:1000,height:720)}
     }
 }
 struct EditorTabStrip: View {
