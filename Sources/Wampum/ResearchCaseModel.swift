@@ -31,7 +31,7 @@ extension WorkbenchModel {
         target.browserGoal = nil; target.browserURL = nil
         if let lab = target.lab { target.lab = LabMemory(id: lab.id, title: lab.title, mode: lab.mode) }
         try saveEditorSession(target)
-        session = target; includeEditor = false; command = ""; output = "No check run yet for this case."
+        session = target; includeEditor = true; command = ""; output = "No check run yet for this case."
         browser.goal = ""; browser.cancelPlan(); controller.prepared = false; controller.handoff = ""
         cancelRequestReview()
     }

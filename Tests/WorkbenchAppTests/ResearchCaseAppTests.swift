@@ -48,7 +48,7 @@ final class ResearchCaseAppTests: XCTestCase {
         XCTAssertThrowsError(try model.replaceResearchCase(replacement))
         model.controller.enabled = false; try model.replaceResearchCase(replacement)
         XCTAssertTrue(model.session.messages.isEmpty); XCTAssertEqual(model.session.notes, "")
-        XCTAssertEqual(model.session.scope, ""); XCTAssertFalse(model.includeEditor)
+        XCTAssertEqual(model.session.scope, ""); XCTAssertTrue(model.includeEditor)
         let checkpointDirectory = model.store.directory.appendingPathComponent("checkpoints")
         let checkpoints = try FileManager.default.contentsOfDirectory(at: checkpointDirectory, includingPropertiesForKeys: nil)
         XCTAssertTrue(try checkpoints.contains { try String(contentsOf: $0).contains("OLD_CASE_CLAIM") })

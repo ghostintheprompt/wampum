@@ -58,6 +58,14 @@ final class AppTests:XCTestCase {
         m.models=[try JSONDecoder().decode(LocalModel.self,from:Data("{\"name\":\"fixture-qwen\"}".utf8))];m.session.model="fixture-qwen";m.session.prompt="Client Example api_key=PRIVATE123456";m.privacy.aliasRules="Client Example => CLIENT_A";m.send()
         XCTAssertTrue(m.showRequestReview);XCTAssertTrue(m.requestPreview.contains("CLIENT_A"));XCTAssertFalse(m.requestPreview.contains("Client Example"));XCTAssertFalse(m.requestPreview.contains("PRIVATE123456"));XCTAssertEqual(m.session.prompt,"Client Example api_key=PRIVATE123456");XCTAssertTrue(m.session.messages.isEmpty);XCTAssertFalse(m.busy);m.cancelRequestReview();XCTAssertNil(m.pendingPacket)
     }
+    @MainActor func testOpenEditorIsDefaultRequestContextAndCanBeExcluded()throws{
+        let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
+        let file=root.appendingPathComponent("facts.md");try Data("Verified project fact: board mode is Ocean.".utf8).write(to:file)
+        m.models=[try JSONDecoder().decode(LocalModel.self,from:Data("{\"name\":\"fixture-qwen\"}".utf8))];m.session.model="fixture-qwen";m.session.prompt="Summarize the supplied project fact.";m.openFile("facts.md")
+        XCTAssertTrue(m.includeEditor);m.send();XCTAssertTrue(m.showRequestReview)
+        XCTAssertTrue(m.requestPreview.contains("UNTRUSTED EDITOR [facts.md]"));XCTAssertTrue(m.requestPreview.contains("Verified project fact: board mode is Ocean."));XCTAssertTrue(m.requestPreview.contains("prior assistant replies are conversation context"))
+        m.cancelRequestReview();m.includeEditor=false;m.send();XCTAssertFalse(m.requestPreview.contains("Verified project fact: board mode is Ocean."));XCTAssertTrue(m.requestPreview.contains("prior assistant replies are conversation context"))
+    }
     @MainActor func testProxyReviewFreezesWithoutSending()throws{
         let(root,m)=try fixture();defer{try? FileManager.default.removeItem(at:root)}
         m.privacy.proxyURL="http://127.0.0.1:8080";m.externalURL="https://example.test/inspect";m.prepareProxyProbe();m.externalURL="https://other.example.test/"

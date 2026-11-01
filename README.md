@@ -10,7 +10,7 @@ Michael's name for the project comes from finding wampum in the mud and reeds ne
 
 ## First working build
 
-Open a project, browse text files, edit, and save with an original-content backup and a stale-write check. Ask an installed Ollama model a question. Attach the current editor explicitly. Keep scope and handoff notes in Case Memory. Review a complete-file response side by side, stage it, and save when ready. Run an explicit check command, inspect its actual output/exit code, and attach the result to the next prompt.
+Open a project, browse text files, edit, and save with an original-content backup and a stale-write check. Ask an installed Ollama model a question; the open editor draft is included by default and can be excluded before sending. Keep scope and handoff notes in Case Memory. Review a complete-file response side by side, stage it, and save when ready. Run an explicit check command, inspect its actual output/exit code, and attach the result to the next prompt.
 
 Drafts, messages, scope, and notes save locally. Checkpoints preserve sessions before changing projects, files, proposals, or runs. Restore a checkpoint from the app. A corrupt session is retained for recovery; unreadable recovery storage blocks automatic writes.
 
