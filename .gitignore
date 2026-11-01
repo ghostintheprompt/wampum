@@ -3,6 +3,13 @@ build/
 .DS_Store
 .swiftpm/
 *.xcuserstate
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+.env.*
+!.env.example
 
 .mcp.json
 
