@@ -9,6 +9,7 @@ import WorkbenchCore
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open Project…", action: model.chooseProject).keyboardShortcut("o")
+                Button("Close Project", action: model.closeProject).disabled(model.session.project.isEmpty)
                 Button("New File…", action: model.newFile).keyboardShortcut("n")
                 Divider()
                 Button("Save File", action: model.saveFile).keyboardShortcut("s")
@@ -59,7 +60,7 @@ struct WorkbenchView: View {
     @State private var surface=ProcessInfo.processInfo.environment["WAMPUM_START_SURFACE"] == "Integrity" ? "Integrity":"Editor"
     var body: some View {
         VStack(spacing:0){
-            HStack(spacing:14){Text("WAMPUM").font(.system(size:25,weight:.black,design:.rounded));Text("GHOST / RESEARCH").font(.system(size:12,weight:.medium,design:.monospaced)).foregroundStyle(acid);Divider().frame(height:22);Text("M4 / 16 GB").font(.system(size:11,design:.monospaced)).foregroundStyle(.secondary);Spacer();Picker("Workspace",selection:$surface){Text("Editor").tag("Editor");Text("Browser").tag("Browser");Text("Tools").tag("Tools");Text("Controller").tag("Controller");Text("Integrity").tag("Integrity")}.pickerStyle(.segmented).labelsHidden().frame(width:420);Button("Open Project",action:model.chooseProject);Button("Checkpoint",action:model.snapshot);Button("Restore",action:model.restoreCheckpoint)}.padding(14).background(panel)
+            HStack(spacing:14){Text("WAMPUM").font(.system(size:25,weight:.black,design:.rounded));Text("GHOST / RESEARCH").font(.system(size:12,weight:.medium,design:.monospaced)).foregroundStyle(acid);Divider().frame(height:22);Text("M4 / 16 GB").font(.system(size:11,design:.monospaced)).foregroundStyle(.secondary);Spacer();Picker("Workspace",selection:$surface){Text("Editor").tag("Editor");Text("Browser").tag("Browser");Text("Tools").tag("Tools");Text("Controller").tag("Controller");Text("Integrity").tag("Integrity")}.pickerStyle(.segmented).labelsHidden().frame(width:420);Button("Open Project",action:model.chooseProject);Button("Close Project",action:model.closeProject).disabled(model.session.project.isEmpty);Button("Checkpoint",action:model.snapshot);Button("Restore",action:model.restoreCheckpoint)}.padding(14).background(panel)
             if surface=="Integrity" {IntegrityPanel(model:model.integrity).frame(maxWidth:.infinity,maxHeight:.infinity)} else if surface=="Tools" {ToolsPanel(model:model).frame(maxWidth:.infinity,maxHeight:.infinity)} else if surface=="Controller" {ControllerPanel(model:model,openBrowser:{surface="Browser"}).frame(maxWidth:.infinity,maxHeight:.infinity)} else if surface=="Browser" {BrowserPanel(model:model,onOpenChat:{surface="Editor"}).frame(maxWidth:.infinity,maxHeight:.infinity)} else {
             HSplitView {
                 VStack(alignment:.leading,spacing:10){

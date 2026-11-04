@@ -17,3 +17,7 @@ venv/
 
 # Private local sessions and model research receipts
 /private/
+
+# Local planning / sensitive — never publish
+modes_to_add.md
+new_clarification_for_project.md

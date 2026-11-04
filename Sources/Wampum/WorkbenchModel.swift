@@ -247,6 +247,10 @@ import WorkbenchCore
             if busy || running || showRequestReview || showProposal || showPatchReview || browser.connected || browser.busy || browser.disconnecting || controller.enabled {error="Finish the active run or review before changing projects.";return};do { try checkpointSession(); buildContextDocuments=nil; session=Session();session.project=url.path;refreshFiles();persist();status="Project: \(url.lastPathComponent)" } catch { self.error=error.localizedDescription }
         }
     }
+    func closeProject() {
+        if busy || running || showRequestReview || showProposal || showPatchReview || browser.connected || browser.busy || browser.disconnecting || controller.enabled {error="Finish the active run or review before closing the project.";return}
+        do { try checkpointSession(); buildContextDocuments=nil; session=Session(); files=[]; persist(); status="Project closed. No project selected." } catch { self.error=error.localizedDescription }
+    }
     func refreshFiles() {
         guard !session.project.isEmpty else { return }
         do {
