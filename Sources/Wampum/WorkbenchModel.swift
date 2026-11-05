@@ -62,6 +62,8 @@ import WorkbenchCore
     @Published var captureDuration=30
     @Published var wirelessSelectedBSSIDs:[String]=[]
     @Published var wirelessStatus="No wireless capture run."
+    @Published var wirelessVMs:[String]=[]
+    @Published var wirelessPreflightReport=""
     @Published var wirelessBusy=false
     // SSH fallback (used when the guest lacks the QEMU guest agent).
     @Published var wirelessUseSSH=false
@@ -1376,6 +1378,51 @@ import WorkbenchCore
     /// Orchestrate a wireless capture in the UTM guest and pin the verified results as evidence.
     /// Scope-gated end to end: the guest scope.json only carries in-scope BSSIDs, and every
     /// returned manifest is re-checked against the case's wireless scope before anything is pinned.
+    /// List the operator's UTM VMs so the VM is picked, not typed.
+    func detectWirelessVMs(){
+        guard let utmctl=UTMControl.detect() else{wirelessStatus="utmctl not found. Install UTM.";return}
+        wirelessBusy=true;wirelessStatus="Listing UTM VMs…"
+        Task{@MainActor in
+            defer{wirelessBusy=false}
+            do{
+                let out=try await UTMRunner(utmctl:utmctl,vm:"").run(["list"],timeout:15)
+                var names:[String]=[]
+                for line in String(decoding:out,as:UTF8.self).split(separator:"\n").dropFirst(){
+                    let parts=line.split(separator:" ",omittingEmptySubsequences:true).map(String.init)
+                    guard parts.count>=3 else{continue}
+                    names.append(parts[2...].joined(separator:" "))
+                }
+                wirelessVMs=names
+                if wirelessVM.isEmpty || !names.contains(wirelessVM){ if let pick=names.first(where:{$0.lowercased().contains("kali")}) ?? names.first{wirelessVM=pick} }
+                wirelessStatus=names.isEmpty ? "No UTM VMs found." : "Detected VM(s): \(names.joined(separator: ", "))."
+            }catch{wirelessStatus="Could not list UTM VMs: \(error.localizedDescription)"}
+        }
+    }
+
+    /// One-click preflight doctor: VM reachable, Alfa visible in the guest, driver/interface present.
+    func runWirelessPreflight(){
+        guard let utmctl=UTMControl.detect() else{wirelessStatus="utmctl not found. Install UTM.";return}
+        guard !wirelessVM.isEmpty else{wirelessStatus="Pick a VM (Detect VMs) first.";return}
+        let runner=UTMRunner(utmctl:utmctl,vm:wirelessVM);let adapter=wirelessAdapter
+        wirelessBusy=true;wirelessPreflightReport="Running preflight on \(wirelessVM)…"
+        Task{@MainActor in
+            defer{wirelessBusy=false}
+            var L:[String]=["VM: \(wirelessVM)"]
+            try? await runner.start()
+            let ready=await runner.waitForAgent(maxSeconds:60)
+            L.append(ready ? "[ok] guest reachable" : "[--] guest NOT reachable — boot the VM and install UTM guest tools")
+            if ready{
+                let usb=((try? await runner.guestBash("lsusb 2>/dev/null | grep -iE '\(adapter.lowercased())|realtek|rtl88' || echo NONE",timeout:15)) ?? "NONE").trimmingCharacters(in:.whitespacesAndNewlines)
+                L.append(usb.contains("NONE")||usb.isEmpty ? "[--] Alfa NOT in guest — plug it into the Mac, then pass USB \(adapter) to \(wirelessVM) (UTM USB menu)" : "[ok] Alfa visible: \(usb)")
+                let iface=((try? await runner.guestBash("iw dev 2>/dev/null | awk '/Interface/{print $2}' | tr '\\n' ' '; (lsmod 2>/dev/null | grep -qE '88xxau|8812au') && echo '[driver ok]' || echo '[driver missing]'",timeout:15)) ?? "").trimmingCharacters(in:.whitespacesAndNewlines)
+                L.append(iface.isEmpty||iface.contains("missing") ? "[--] driver/interface — run the VM bootstrap (rtl8812au): \(iface)" : "[ok] iface/driver: \(iface)")
+            }
+            L.append(ready && !L.contains(where:{$0.hasPrefix("[--]")}) ? "READY — capture should work." : "Not ready — resolve the [--] items.")
+            wirelessPreflightReport=L.joined(separator:"\n")
+            wirelessStatus="Preflight complete."
+        }
+    }
+
     func runWirelessCapture() {
         guard !busy, !wirelessBusy else { return }
         guard let activeState = session.researchCase else { error = "No research case. Import a contract with a wireless scope first."; return }

@@ -290,9 +290,13 @@ struct ToolsPanel: View {
                 let rf = model.session.researchCase?.contract.wirelessScope ?? []
                 Text(rf.isEmpty ? "No RF scope in this case — add authorized BSSIDs to the contract (wirelessScope)." : "Authorized BSSIDs (RoE): " + rf.map { "\($0.bssid) ch\($0.channel)" }.joined(separator: ", "))
                     .font(.caption).foregroundStyle(rf.isEmpty ? .orange : .secondary)
-                HStack { TextField("UTM VM", text: $model.wirelessVM).textFieldStyle(.roundedBorder).frame(width: 110)
-                         TextField("Adapter VID:PID", text: $model.wirelessAdapter).textFieldStyle(.roundedBorder).frame(width: 130)
+                HStack { if model.wirelessVMs.isEmpty { TextField("UTM VM", text: $model.wirelessVM).textFieldStyle(.roundedBorder).frame(width: 120) }
+                         else { Picker("", selection: $model.wirelessVM) { ForEach(model.wirelessVMs, id: \.self) { Text($0).tag($0) } }.labelsHidden().frame(width: 130) }
+                         Button("Detect VMs") { model.detectWirelessVMs() }.disabled(model.wirelessBusy)
                          Stepper("\(model.captureDuration)s", value: $model.captureDuration, in: 5...600, step: 5).frame(width: 110) }
+                HStack { TextField("Adapter VID:PID", text: $model.wirelessAdapter).textFieldStyle(.roundedBorder).frame(width: 150)
+                         Button("Preflight") { model.runWirelessPreflight() }.disabled(model.wirelessBusy || model.wirelessVM.isEmpty) }
+                if !model.wirelessPreflightReport.isEmpty { Text(model.wirelessPreflightReport).font(.system(size: 11, design: .monospaced)).textSelection(.enabled).foregroundStyle(.secondary) }
                 TextField("Authorization basis (RoE / ownership record)", text: $model.wirelessAuthorization).textFieldStyle(.roundedBorder)
                 Toggle("Use SSH instead of the UTM guest agent", isOn: $model.wirelessUseSSH).font(.caption)
                 if model.wirelessUseSSH {
