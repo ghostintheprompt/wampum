@@ -1378,9 +1378,13 @@ import WorkbenchCore
     /// Orchestrate a wireless capture in the UTM guest and pin the verified results as evidence.
     /// Scope-gated end to end: the guest scope.json only carries in-scope BSSIDs, and every
     /// returned manifest is re-checked against the case's wireless scope before anything is pinned.
+    /// utmctl drives the UTM app; make sure it is running before any utmctl call.
+    private func launchUTM(){ NSWorkspace.shared.open(URL(fileURLWithPath: "/Applications/UTM.app")) }
+
     /// List the operator's UTM VMs so the VM is picked, not typed.
     func detectWirelessVMs(){
         guard let utmctl=UTMControl.detect() else{wirelessStatus="utmctl not found. Install UTM.";return}
+        launchUTM()
         wirelessBusy=true;wirelessStatus="Listing UTM VMs…"
         Task{@MainActor in
             defer{wirelessBusy=false}
@@ -1408,7 +1412,8 @@ import WorkbenchCore
         Task{@MainActor in
             defer{wirelessBusy=false}
             var L:[String]=["VM: \(wirelessVM)"]
-            try? await runner.start()
+            launchUTM()
+            try? await runner.startResilient()
             let ready=await runner.waitForAgent(maxSeconds:60)
             L.append(ready ? "[ok] guest reachable" : "[--] guest NOT reachable — boot the VM and install UTM guest tools")
             if ready{
@@ -1449,7 +1454,8 @@ import WorkbenchCore
         Task { @MainActor in
             defer { wirelessBusy = false }
             do {
-                try await runner.start()   // VM lifecycle is always utmctl
+                launchUTM()
+                try await runner.startResilient()   // VM lifecycle is always utmctl (retries the -1712 timeout)
                 wirelessStatus = usingSSH ? "Waiting for SSH…" : "Waiting for guest agent…"
                 guard await transport.waitForReady(maxSeconds: 180) else { throw WorkbenchError.invalid("Guest did not respond over \(usingSSH ? "SSH" : "the guest agent"). Check the connection, or install qemu-guest-agent.") }
                 wirelessStatus = "Attaching adapter \(adapter)…"

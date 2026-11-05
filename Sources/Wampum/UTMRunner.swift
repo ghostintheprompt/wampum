@@ -55,6 +55,12 @@ struct UTMRunner {
     }
 
     func start() async throws { _ = try await run(try UTMControl.argv(vm: vm, .start)) }
+    /// utmctl's first AppleEvent to UTM can time out (OSStatus -1712); retry a few times.
+    func startResilient(retries: Int = 3) async throws {
+        var last: Error?
+        for _ in 0..<max(1, retries) { do { try await start(); return } catch { last = error; try? await Task.sleep(nanoseconds: 3_000_000_000) } }
+        if let last { throw last }
+    }
     func usbConnect(_ device: String) async throws { _ = try await run(["usb", "connect", "--hide", vm, device]) }
     func push(_ data: Data, to guestPath: String) async throws { _ = try await run(try UTMControl.argv(vm: vm, .filePush(guestPath: guestPath)), stdin: data) }
     func pull(_ guestPath: String) async throws -> Data { try await run(try UTMControl.argv(vm: vm, .filePull(guestPath: guestPath)), timeout: 60) }
