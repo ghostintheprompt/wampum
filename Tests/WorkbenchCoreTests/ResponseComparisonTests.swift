@@ -25,6 +25,23 @@ final class ResponseComparisonTests: XCTestCase {
         XCTAssertEqual(s.classification, .notDenied)
     }
 
+    func testEmptyUnauthorizedSuccessIsWeakConfidence() throws {
+        let s = try ResponseComparison.evaluate([
+            obs("owner", true, 200, "{\"ssn\":\"123\"}"),
+            obs("attacker", false, 200, "")   // success but empty body
+        ])
+        XCTAssertEqual(s.classification, .notDenied)
+        XCTAssertEqual(s.confidence, .weak)
+    }
+
+    func testBrokenAccessControlIsStrongConfidence() throws {
+        let s = try ResponseComparison.evaluate([
+            obs("owner", true, 200, "{\"ssn\":\"123\"}"),
+            obs("attacker", false, 200, "{\"ssn\":\"123\"}")
+        ])
+        XCTAssertEqual(s.confidence, .strong)
+    }
+
     func testNoSignalWhenUnauthorizedDenied() throws {
         let s = try ResponseComparison.evaluate([
             obs("owner", true, 200, "data"),

@@ -24,12 +24,20 @@ public struct ResponseObservation: Codable, Equatable, Sendable {
 /// through `FindingVerification`. This only reads status and body hashes; it proves nothing
 /// about intent and does not fetch anything.
 public enum ResponseComparison {
+    /// Lead strength: strong = byte-identical to an authorized response; weak = empty/no-data success.
+    public enum Confidence: String, Codable, Equatable, Sendable { case strong, moderate, weak }
+
     public struct Signal: Codable, Equatable, Sendable {
         public enum Classification: String, Codable, Sendable { case none, notDenied, brokenAccessControl }
         public let classification: Classification
         public let detail: String
         public let unauthorizedLabels: [String]
+        public let confidence: Confidence
         public var present: Bool { classification != .none }
+        public init(classification: Classification, detail: String, unauthorizedLabels: [String], confidence: Confidence = .moderate) {
+            self.classification = classification; self.detail = detail
+            self.unauthorizedLabels = unauthorizedLabels; self.confidence = confidence
+        }
     }
 
     public static func evaluate(_ observations: [ResponseObservation]) throws -> Signal {
@@ -46,15 +54,20 @@ public enum ResponseComparison {
         if !brokeIn.isEmpty {
             return Signal(classification: .brokenAccessControl,
                           detail: "Unauthorized identity received a response byte-identical to an authorized one — a broken-access-control lead. Reproduce and pin both captured responses to promote.",
-                          unauthorizedLabels: brokeIn.map(\.label))
+                          unauthorizedLabels: brokeIn.map(\.label), confidence: .strong)
         }
-        // Weaker: an unauthorized identity got any success instead of being denied.
+        // Weaker: an unauthorized identity got any success instead of being denied. Demote when every
+        // such success is empty (no data exposed — likely an allow-shaped 200, not a real read).
         let notDenied = unauthorized.filter { $0.isSuccess }
         if !notDenied.isEmpty {
+            let allEmpty = notDenied.allSatisfy { $0.bodyBytes == 0 }
+            let note = allEmpty
+                ? " Every such response was empty — likely no data exposed; low confidence."
+                : " Non-empty body differs from the authorized one — verify it is real resource data."
             return Signal(classification: .notDenied,
-                          detail: "Unauthorized identity was not denied (received a success status). May be an empty or different resource — verify the response contents.",
-                          unauthorizedLabels: notDenied.map(\.label))
+                          detail: "Unauthorized identity was not denied (received a success status)." + note,
+                          unauthorizedLabels: notDenied.map(\.label), confidence: allEmpty ? .weak : .moderate)
         }
-        return Signal(classification: .none, detail: "Every unauthorized identity was denied (no success). No access-control signal.", unauthorizedLabels: [])
+        return Signal(classification: .none, detail: "Every unauthorized identity was denied (no success). No access-control signal.", unauthorizedLabels: [], confidence: .moderate)
     }
 }
