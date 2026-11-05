@@ -79,6 +79,29 @@ public enum FfufImport {
             return FfufResult(url: url, status: status, length: length, input: input)
         }
     }
+
+    /// Lead strength for a discovered path. weak = the wildcard/soft-404 response (the catch-all a
+    /// fuzzer hits on most inputs). strong = a gated resource that exists (401/403) or a distinctive
+    /// 2xx (unique length). This cuts the dominant false positive of path fuzzing.
+    public enum LeadConfidence: String, Codable, Sendable { case strong, moderate, weak }
+    public struct Lead: Codable, Equatable, Sendable { public let result: FfufResult; public let confidence: LeadConfidence }
+
+    public static func score(_ results: [FfufResult]) -> [Lead] {
+        let total = results.count
+        guard total > 0 else { return [] }
+        var freq: [String: Int] = [:]
+        for r in results { freq["\(r.status)\u{1}\(r.length)", default: 0] += 1 }
+        return results.map { r in
+            let f = freq["\(r.status)\u{1}\(r.length)"] ?? 1
+            let dominant = f >= 5 && Double(f) / Double(total) >= 0.3    // the catch-all bucket
+            let conf: LeadConfidence
+            if dominant { conf = .weak }
+            else if r.status == 401 || r.status == 403 { conf = .strong }   // exists + access-controlled
+            else if (200..<300).contains(r.status) && f == 1 { conf = .strong } // distinctive real content
+            else { conf = .moderate }
+            return Lead(result: r, confidence: conf)
+        }
+    }
 }
 
 /// One service nmap observed on a host: a lead (a reachable service), whose impact is

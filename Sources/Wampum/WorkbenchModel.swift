@@ -1305,6 +1305,7 @@ import WorkbenchCore
                 let data=try Data(contentsOf:url)
                 let results=try FfufImport.results(from:data)
                 guard !results.isEmpty else{toolStatus="No ffuf results in \(url.lastPathComponent).";return}
+                let leads=FfufImport.score(results)
                 let dir=store.directory.appendingPathComponent("tool-receipts").appendingPathComponent("ffuf-"+String(UUID().uuidString.prefix(8)))
                 try FileManager.default.createDirectory(at:dir,withIntermediateDirectories:true,attributes:[.posixPermissions:0o700])
                 var imported=0
@@ -1318,12 +1319,13 @@ import WorkbenchCore
                     let pin=try ResearchEvidence.Evidence.pin(id:"ffuf-\(i)-"+String(UUID().uuidString.prefix(6)),caseID:target.contract.id,contractHash:hash,kind:.sourceReport,path:file.path)
                     try target.ledger.addEvidence(pin)
                     var updated=session;updated.researchCase=target;session=updated
-                    var receipt=ToolReceipt(tool:"ffuf",action:"path",targets:[URL(string:r.url)?.host ?? ""],argument:r.input,outcome:.succeeded,detail:"LEAD (discovered path, verify impact): \(r.url) [HTTP \(r.status), \(r.length)b].")
+                    var receipt=ToolReceipt(tool:"ffuf",action:"path",targets:[URL(string:r.url)?.host ?? ""],argument:r.input,outcome:.succeeded,detail:"LEAD [\(leads[i].confidence.rawValue)] (discovered path, verify impact): \(r.url) [HTTP \(r.status), \(r.length)b].")
                     receipt.resultSHA256=pin.sha256
                     recordToolReceipt(receipt);imported+=1
                 }
                 try checkpointSession();persist()
-                toolStatus="Imported \(imported) ffuf path(s) as sourceReport leads. Verify impact and capture to promote."
+                let strong=leads.filter{$0.confidence == .strong}.count, weak=leads.filter{$0.confidence == .weak}.count
+                toolStatus="Imported \(imported) ffuf path(s): \(strong) strong (chase first), \(weak) weak (likely catch-all/soft-404). Verify impact and capture to promote."
             }catch{self.error=error.localizedDescription;toolStatus="ffuf import failed; see error."}
         }
     }
