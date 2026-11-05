@@ -930,6 +930,35 @@ import WorkbenchCore
         }
     }
 
+    // MARK: - Agentic exfil harness (indirect injection -> agent data exfiltration)
+    @Published var agenticPayloads:[AIRedTeam.Attempt]=[]
+    @Published var agenticTrials:[AgenticExfil.Trial]=[]
+    @Published var agenticReliability:AgenticExfil.Reliability?
+    @Published var agenticStatus="Generate payloads, host one where the authorized agent will read it, run the agent, then paste each run's reply + outbound requests."
+
+    /// Build the indirect-injection payloads to embed in attacker-hosted content for an AUTHORIZED
+    /// agentic target. Pure — nothing is sent. The live step (host it, point the scope-gated agent
+    /// at it, capture the run) is the operator's; each run is folded back as a trial.
+    func generateAgenticPayloads(canary:String,sinkHost:String){
+        guard !canary.isEmpty,!sinkHost.isEmpty else{agenticStatus="Set a canary and an attacker sink host first.";return}
+        agenticPayloads=AgenticExfil.payloads(canary:canary,sinkHost:sinkHost)
+        agenticStatus="\(agenticPayloads.count) payloads. Host one where the authorized agent fetches it, run the agent, then add the reply + outbound requests as a trial."
+    }
+
+    /// Evaluate one observed run and fold it into the reliability score. `outbound` is one URL/target
+    /// per line (or comma-separated) that the agent contacted during the run.
+    func addAgenticTrial(replyText:String,outbound:String,canary:String,sinkHost:String){
+        guard !canary.isEmpty,!sinkHost.isEmpty else{agenticStatus="Set a canary and sink host first.";return}
+        let requests=outbound.split(whereSeparator:{$0=="\n"||$0==","}).map{$0.trimmingCharacters(in:.whitespaces)}.filter{!$0.isEmpty}
+        let trial=AgenticExfil.evaluateTrial(replyText:replyText,outboundRequests:requests,canary:canary,sinkHost:sinkHost)
+        agenticTrials.append(trial)
+        let score=AgenticExfil.score(agenticTrials)
+        agenticReliability=score
+        agenticStatus=score.summary+(score.meetsThreshold ? " Capture the crossing runs as evidence and promote a claim citing them.":"")
+    }
+
+    func resetAgenticTrials(){agenticTrials=[];agenticReliability=nil;agenticStatus="Trials cleared."}
+
     @Published var discoveredEndpoints:[InferenceEndpointDiscovery.Hit]=[]
 
     /// Scope-gated discovery of exposed AI inference endpoints on an in-scope host. Probes the

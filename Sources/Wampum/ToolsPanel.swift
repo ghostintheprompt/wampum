@@ -40,6 +40,10 @@ struct ToolsPanel: View {
     @State private var bolaURL = ""
     @State private var bolaIDs = "0001, 0002, 0003"
     @State private var bolaIdentities = "owner-0001 | 0001 | Authorization: Bearer OWNER1\nattacker | | Authorization: Bearer ATTACKER"
+    @State private var agCanary = "CANARY-7f3a-SECRET"
+    @State private var agSink = "exfil.attacker.test"
+    @State private var agReply = ""
+    @State private var agOutbound = ""
 
     private func parseBolaIdentities(_ text: String) -> [BolaIdentity] {
         text.split(separator: "\n").compactMap { raw in
@@ -250,6 +254,31 @@ struct ToolsPanel: View {
                 }
                 Text(model.aiStatus).font(.caption).foregroundStyle(acid).textSelection(.enabled)
                 Text("Sends indirect-prompt-injection payloads and guardrail-robustness mutations to a scope-gated AI endpoint, captures every response as evidence, and rolls them into an attack graph. Every crossing is a LEAD — promote only through the evidence path. Authorized targets only; the case scope gates the endpoint host.").font(.caption2).foregroundStyle(.secondary)
+
+                Divider()
+                Text("AGENTIC EXFIL (INDIRECT INJECTION → DATA EXFIL)").font(.headline).foregroundStyle(acid)
+                HStack { TextField("canary (planted secret)", text: $agCanary).textFieldStyle(.roundedBorder)
+                         TextField("attacker sink host", text: $agSink).textFieldStyle(.roundedBorder) }
+                Button("Generate Payloads") { model.generateAgenticPayloads(canary: agCanary.trimmingCharacters(in: .whitespaces), sinkHost: agSink.trimmingCharacters(in: .whitespaces)) }
+                if !model.agenticPayloads.isEmpty {
+                    ForEach(model.agenticPayloads, id: \.label) { p in
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(p.label).font(.system(size: 10, weight: .bold, design: .monospaced)).foregroundStyle(acid)
+                            Text(p.payload).font(.system(size: 10, design: .monospaced)).textSelection(.enabled).foregroundStyle(.secondary).lineLimit(3)
+                        }
+                    }
+                }
+                Text("Agent reply (paste one run):").font(.caption2).foregroundStyle(.secondary)
+                TextEditor(text: $agReply).font(.system(size: 11, design: .monospaced)).frame(height: 44).overlay(RoundedRectangle(cornerRadius: 4).stroke(.gray.opacity(0.4)))
+                TextField("outbound requests the agent made (one per line or comma-separated)", text: $agOutbound).textFieldStyle(.roundedBorder)
+                HStack { Button("Add Trial") { model.addAgenticTrial(replyText: agReply, outbound: agOutbound, canary: agCanary.trimmingCharacters(in: .whitespaces), sinkHost: agSink.trimmingCharacters(in: .whitespaces)); agReply = ""; agOutbound = "" }.disabled(model.agenticPayloads.isEmpty)
+                         Button("Reset") { model.resetAgenticTrials() }
+                         if let rel = model.agenticReliability { Text(rel.meetsThreshold ? "QUALIFIES ≥50%" : "below bar").font(.caption2.bold()).foregroundStyle(rel.meetsThreshold ? .orange : .secondary) } }
+                if !model.agenticTrials.isEmpty {
+                    Text("trials: " + model.agenticTrials.map { $0.channel.rawValue }.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
+                }
+                Text(model.agenticStatus).font(.caption).foregroundStyle(acid).textSelection(.enabled)
+                Text("For an AUTHORIZED agentic target (e.g. the OpenAI Safety scope). Host a payload where the agent reads it, run the agent, paste its reply + the outbound requests it made. A crossing is a LEAD; the program qualifies it only at ≥50% reliability across runs — the score tracks that bar.").font(.caption2).foregroundStyle(.secondary)
 
                 Divider()
                 Text("WIRELESS (UTM / KALI + ALFA)").font(.headline).foregroundStyle(acid)
