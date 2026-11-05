@@ -78,5 +78,9 @@ final class AgenticExfilTests: XCTestCase {
         XCTAssertTrue(ps.allSatisfy { $0.payload.contains(canary) })
         XCTAssertTrue(ps.contains { $0.payload.contains(sink) && $0.label == "browse-and-beacon" })
         XCTAssertTrue(ps.contains { $0.label == "markdown-image-exfil" && $0.payload.contains(sink) })
+        XCTAssertGreaterThanOrEqual(ps.count, 8)
+        XCTAssertTrue(ps.contains { $0.label == "subdomain-exfil" && $0.payload.contains("\(canary).\(sink)") })
+        XCTAssertTrue(ps.contains { $0.label == "citation-link-exfil" && $0.payload.contains(sink) })
+        XCTAssertEqual(Set(ps.map { $0.label }).count, ps.count)  // labels unique (UI ForEach id)
     }
 }
