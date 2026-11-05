@@ -3,8 +3,8 @@ import AppKit
 import UniformTypeIdentifiers
 import WorkbenchCore
 
-private let acid = Color(red: 0.76, green: 0.83, blue: 0.57)
-private let panel = Color(red: 0.105, green: 0.105, blue: 0.11)
+private let acid = Color(red: 0.36, green: 0.98, blue: 0.62)
+private let panel = Color(red: 0.082, green: 0.094, blue: 0.106)
 
 /// Operator surface for the scope-gated external pen-test tools. Every action here routes
 /// through the active case's authorized scope (the rules of engagement), explicit review,

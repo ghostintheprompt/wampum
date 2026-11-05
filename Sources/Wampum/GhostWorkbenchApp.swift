@@ -49,9 +49,9 @@ import WorkbenchCore
         }
     }
 }
-private let carbon=Color(red:0.075,green:0.075,blue:0.08)
-private let panel=Color(red:0.105,green:0.105,blue:0.11)
-private let acid=Color(red:0.76,green:0.83,blue:0.57)
+private let carbon=Color(red:0.035,green:0.043,blue:0.051)
+private let panel=Color(red:0.082,green:0.094,blue:0.106)
+private let acid=Color(red:0.36,green:0.98,blue:0.62)
 struct WorkbenchView: View {
     @ObservedObject var model: WorkbenchModel
     @State private var query=""
@@ -231,7 +231,7 @@ struct CodeEditor: NSViewRepresentable {
     func makeCoordinator()->Coordinator{Coordinator(self)}
     func makeNSView(context:Context)->NSScrollView{
         let scroll=NSScrollView();scroll.hasVerticalScroller=true;scroll.hasHorizontalScroller=true
-        let editor=NSTextView();editor.isRichText=false;editor.isAutomaticQuoteSubstitutionEnabled=false;editor.isAutomaticDashSubstitutionEnabled=false;editor.isAutomaticSpellingCorrectionEnabled=false;editor.isContinuousSpellCheckingEnabled=false;editor.font=NSFont.monospacedSystemFont(ofSize:14,weight:.regular);editor.backgroundColor=NSColor(calibratedWhite:0.075,alpha:1);editor.textColor=NSColor(calibratedWhite:0.91,alpha:1);editor.insertionPointColor = .white;editor.textContainerInset=NSSize(width:18,height:18);editor.isHorizontallyResizable=true;editor.isVerticallyResizable=true;editor.autoresizingMask=[.width];editor.textContainer?.widthTracksTextView=false;editor.textContainer?.containerSize=NSSize(width:CGFloat.greatestFiniteMagnitude,height:CGFloat.greatestFiniteMagnitude);editor.delegate=context.coordinator;editor.allowsUndo=true;scroll.documentView=editor;editor.string=text;return scroll
+        let editor=NSTextView();editor.isRichText=false;editor.isAutomaticQuoteSubstitutionEnabled=false;editor.isAutomaticDashSubstitutionEnabled=false;editor.isAutomaticSpellingCorrectionEnabled=false;editor.isContinuousSpellCheckingEnabled=false;editor.font=NSFont.monospacedSystemFont(ofSize:14,weight:.regular);editor.backgroundColor=NSColor(calibratedWhite:0.035,alpha:1);editor.textColor=NSColor(calibratedWhite:0.95,alpha:1);editor.insertionPointColor = .white;editor.textContainerInset=NSSize(width:18,height:18);editor.isHorizontallyResizable=true;editor.isVerticallyResizable=true;editor.autoresizingMask=[.width];editor.textContainer?.widthTracksTextView=false;editor.textContainer?.containerSize=NSSize(width:CGFloat.greatestFiniteMagnitude,height:CGFloat.greatestFiniteMagnitude);editor.delegate=context.coordinator;editor.allowsUndo=true;scroll.documentView=editor;editor.string=text;return scroll
     }
     func updateNSView(_ scroll:NSScrollView,context:Context){context.coordinator.parent=self;if let editor=scroll.documentView as? NSTextView,editor.string != text{editor.string=text}}
     final class Coordinator:NSObject,NSTextViewDelegate{var parent:CodeEditor;init(_ parent:CodeEditor){self.parent=parent};func textDidChange(_ notification:Notification){if let editor=notification.object as? NSTextView{parent.text=editor.string}}}

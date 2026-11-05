@@ -3,7 +3,7 @@ import WorkbenchCore
 
 struct IntegrityPanel:View {
     @ObservedObject var model:IntegrityModel
-    private let accent=Color(red:0.76,green:0.83,blue:0.57)
+    private let accent=Color(red:0.36,green:0.98,blue:0.62)
     var body:some View {
         VStack(alignment:.leading,spacing:14) {
             HStack {
