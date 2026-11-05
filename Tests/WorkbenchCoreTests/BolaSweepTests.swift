@@ -19,6 +19,29 @@ final class BolaSweepTests: XCTestCase {
         XCTAssertTrue(s.detail.contains("owner-identical"))
     }
 
+    func testBoilerplateResponsesDemotedToWeak() throws {
+        // attacker gets 200 with the SAME body across 3 objects it doesn't own -> boilerplate -> weak.
+        var cells: [BolaCell] = []
+        for i in 1...3 {
+            cells.append(BolaCell(identity: "owner\(i)", objectID: "\(i)", authorized: true, status: 200, bodySHA256: "OWN\(i)", bodyBytes: 50))
+            cells.append(BolaCell(identity: "attacker", objectID: "\(i)", authorized: false, status: 200, bodySHA256: "DENY", bodyBytes: 20))
+        }
+        let s = try BolaSweep.evaluate(cells)
+        XCTAssertEqual(s.crossTenant.count, 3)
+        XCTAssertTrue(s.crossTenant.allSatisfy { $0.confidence == .weak }, "uniform boilerplate across objects must be weak, not a read")
+        XCTAssertTrue(s.strongHits.isEmpty)
+    }
+
+    func testOwnerIdenticalIsStrongConfidence() throws {
+        let cells = [
+            BolaCell(identity: "owner", objectID: "7", authorized: true, status: 200, bodySHA256: "REAL", bodyBytes: 40),
+            BolaCell(identity: "attacker", objectID: "7", authorized: false, status: 200, bodySHA256: "REAL", bodyBytes: 40),
+        ]
+        let s = try BolaSweep.evaluate(cells)
+        XCTAssertEqual(s.strongHits.count, 1)
+        XCTAssertEqual(s.crossTenant.first?.confidence, .strong)
+    }
+
     func testNoCrossTenantWhenEachReadsOnlyOwned() throws {
         let cells = [
             BolaCell(identity: "owner-0001", objectID: "0001", authorized: true, status: 200, bodySHA256: "A1", bodyBytes: 10),
