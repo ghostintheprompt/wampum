@@ -244,12 +244,12 @@ import WorkbenchCore
     func chooseProject() {
         let panel=NSOpenPanel();panel.canChooseDirectories=true;panel.canChooseFiles=false;panel.allowsMultipleSelection=false
         if panel.runModal() == .OK, let url=panel.url {
-            if busy || running || showRequestReview || showProposal || showPatchReview || browser.connected || browser.busy || browser.disconnecting || controller.enabled {error="Finish the active run or review before changing projects.";return};do { try checkpointSession(); buildContextDocuments=nil; session=Session();session.project=url.path;refreshFiles();persist();status="Project: \(url.lastPathComponent)" } catch { self.error=error.localizedDescription }
+            if busy || running || showRequestReview || showProposal || showPatchReview || browser.connected || browser.busy || browser.disconnecting || controller.enabled {error="Finish the active run or review before changing projects.";return};do { try checkpointSession(); buildContextDocuments=nil; session=Session();session.project=url.path;command="";output="No check run yet.";refreshFiles();persist();status="Project: \(url.lastPathComponent)" } catch { self.error=error.localizedDescription }
         }
     }
     func closeProject() {
         if busy || running || showRequestReview || showProposal || showPatchReview || browser.connected || browser.busy || browser.disconnecting || controller.enabled {error="Finish the active run or review before closing the project.";return}
-        do { try checkpointSession(); buildContextDocuments=nil; session=Session(); files=[]; persist(); status="Project closed. No project selected." } catch { self.error=error.localizedDescription }
+        do { try checkpointSession(); buildContextDocuments=nil; session=Session(); files=[]; command=""; output="No check run yet."; persist(); status="Project closed. No project selected." } catch { self.error=error.localizedDescription }
     }
     func refreshFiles() {
         guard !session.project.isEmpty else { return }

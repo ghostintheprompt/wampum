@@ -60,7 +60,7 @@ struct WorkbenchView: View {
     @State private var surface=ProcessInfo.processInfo.environment["WAMPUM_START_SURFACE"] == "Integrity" ? "Integrity":"Editor"
     var body: some View {
         VStack(spacing:0){
-            HStack(spacing:14){Text("WAMPUM").font(.system(size:25,weight:.black,design:.rounded));Text("GHOST / RESEARCH").font(.system(size:12,weight:.medium,design:.monospaced)).foregroundStyle(acid);Divider().frame(height:22);Text("M4 / 16 GB").font(.system(size:11,design:.monospaced)).foregroundStyle(.secondary);Spacer();Picker("Workspace",selection:$surface){Text("Editor").tag("Editor");Text("Browser").tag("Browser");Text("Tools").tag("Tools");Text("Controller").tag("Controller");Text("Integrity").tag("Integrity")}.pickerStyle(.segmented).labelsHidden().frame(width:420);Button("Open Project",action:model.chooseProject);Button("Close Project",action:model.closeProject).disabled(model.session.project.isEmpty);Button("Checkpoint",action:model.snapshot);Button("Restore",action:model.restoreCheckpoint)}.padding(14).background(panel)
+            HStack(spacing:14){Text("WAMPUM").font(.system(size:25,weight:.black,design:.rounded));Text("GHOST / RESEARCH").font(.system(size:12,weight:.medium,design:.monospaced)).foregroundStyle(acid);Spacer();Picker("Workspace",selection:$surface){Text("Editor").tag("Editor");Text("Browser").tag("Browser");Text("Tools").tag("Tools")}.pickerStyle(.segmented).labelsHidden().frame(width:260);Menu((surface=="Controller" || surface=="Integrity") ? surface : "System"){Button("Controller"){surface="Controller"};Button("Integrity"){surface="Integrity"}}.frame(width:120);Button("Open Project",action:model.chooseProject);Button("Close Project",action:model.closeProject).disabled(model.session.project.isEmpty);Button("Checkpoint",action:model.snapshot);Button("Restore",action:model.restoreCheckpoint)}.padding(14).background(panel)
             if surface=="Integrity" {IntegrityPanel(model:model.integrity).frame(maxWidth:.infinity,maxHeight:.infinity)} else if surface=="Tools" {ToolsPanel(model:model).frame(maxWidth:.infinity,maxHeight:.infinity)} else if surface=="Controller" {ControllerPanel(model:model,openBrowser:{surface="Browser"}).frame(maxWidth:.infinity,maxHeight:.infinity)} else if surface=="Browser" {BrowserPanel(model:model,onOpenChat:{surface="Editor"}).frame(maxWidth:.infinity,maxHeight:.infinity)} else {
             HSplitView {
                 VStack(alignment:.leading,spacing:10){
@@ -136,21 +136,7 @@ struct WorkbenchView: View {
                         HStack{Picker("Model",selection:$model.session.model){Text("Choose installed model").tag("");ForEach(model.models){m in Text(m.name).tag(m.name)}}.labelsHidden();Button("Discover",action:model.discover).disabled(model.busy)}
                         Text(model.capabilities.isEmpty ? "Capabilities not loaded" : model.capabilities.joined(separator:" / ")).font(.caption2).foregroundStyle(.secondary)
                         HStack{Picker("Context",selection:$model.session.context){ForEach([4096,8192,16384,32768],id:\.self){Text("\($0/1024)K").tag($0)}};Toggle("Think",isOn:$model.thinking).disabled(!model.capabilities.contains("thinking"))}.font(.caption)
-                        Text("8K starting profile. Larger contexts need measured memory headroom. No model downloads or global Ollama changes.").font(.caption2).foregroundStyle(.secondary)
-                        HStack {
-                            Menu("Export Markdown") {
-                                Button("Entire Chat…") { model.saveConversation() }
-                                Button("All Replies…") { model.saveConversation(assistantOnly: true) }
-                            }.disabled(model.busy || model.session.messages.isEmpty)
-                            Menu("Document") {
-                                Button("Build from Sources…", action: model.prepareResearchDocument)
-                                    .disabled(model.showRequestReview)
-                                Button("Review Document…", action: model.reviewDocumentCheck)
-                                    .disabled(model.session.documentJob == nil)
-                            }.disabled(model.busy || model.running)
-                        }
-                        Text("Export saves existing messages. Build creates a document from a source manifest.")
-                            .font(.caption2).foregroundStyle(.secondary)
+                        Text("Larger contexts need more memory. No downloads or global Ollama changes.").font(.caption2).foregroundStyle(.secondary)
                         ScrollViewReader{proxy in ScrollView{LazyVStack(alignment:.leading,spacing:16){ForEach(model.session.messages){message in VStack(alignment:.leading,spacing:7){Text(message.role.uppercased()).font(.system(size:10,weight:.bold,design:.monospaced)).foregroundStyle(acid);Text(message.content).font(.system(size:13)).textSelection(.enabled);if let review=message.sourceQuoteReview{SourceQuoteReviewPanel(review:review)};if let paths=message.imagePaths,!paths.isEmpty {Text("\(paths.count) image attachment(s) saved locally. Not resent automatically.").font(.caption2).foregroundStyle(.secondary)};if message.role=="assistant" {VStack(alignment:.leading,spacing:6){if message.stopReason == "length" {Text("INCOMPLETE — output limit reached").font(.caption.bold()).foregroundStyle(.orange)};if let tokens=message.outputTokens {Text("Output: \(tokens) tokens / stop: \(message.stopReason ?? "unknown")").font(.caption2).foregroundStyle(.secondary)};HStack{Button("Save Reply…"){model.saveMarkdownResponse(message.content)};if message.content.contains("diff --git ") || message.content.contains("WAMPUM DELETE FILE: "){Button("Review Patch"){model.stagePatch(message.content)}};if model.session.messages.last?.id == message.id {Button("Continue Reply"){model.prepareContinuation(message)}.disabled(model.busy || model.showRequestReview)}}}};if message.role=="assistant" && message.content.contains("```"){Button("Review File Proposal"){model.stageProposal(message.content)}}}.padding(12).frame(maxWidth:.infinity,alignment:.leading).background(panel).clipShape(RoundedRectangle(cornerRadius:8)).id(message.id)}}}.onChange(of:model.session.messages.count){_,_ in if let id=model.session.messages.last?.id{proxy.scrollTo(id,anchor:.bottom)}}}
                         Text(model.contextStatus).font(.caption2).foregroundStyle(.secondary)
                         DisclosureGroup("Context options") {
@@ -172,7 +158,7 @@ struct WorkbenchView: View {
                 }.padding(12).frame(minWidth:330,idealWidth:400,maxWidth:600)
             }
             }
-            HStack{Text(model.status).lineLimit(1);Spacer();Text("LOCAL INFERENCE / EXPLICIT CONTEXT / DISK CHECKPOINTS").font(.system(size:9,design:.monospaced))}.font(.caption).padding(8).background(panel)
+            HStack{Text(model.status).lineLimit(1);Spacer();Text("LOCAL INFERENCE").font(.system(size:9,design:.monospaced)).foregroundStyle(.secondary)}.font(.caption).padding(8).background(panel)
         }.background(carbon).tint(acid)
         .task {while !Task.isCancelled {model.controller.poll(model:model);do{try await Task.sleep(nanoseconds:500_000_000)}catch{return}}}
         .onReceive(model.$session.debounce(for:.milliseconds(500),scheduler:RunLoop.main)){_ in model.persist()}
