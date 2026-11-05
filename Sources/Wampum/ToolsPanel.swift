@@ -114,6 +114,7 @@ struct ToolsPanel: View {
 
     var body: some View {
         HSplitView {
+            ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Text("EXTERNAL TOOLS / SCOPE-GATED").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(acid)
                 if let id = model.session.researchCase?.contract.id {
@@ -347,9 +348,9 @@ struct ToolsPanel: View {
                 Text(model.reportStatus).font(.caption).foregroundStyle(acid).textSelection(.enabled)
                 Text("A report contains only promoted Findings (operator-approved + a host receipt that verifies on disk + clean FindingGate), each re-checked at generation. Severity and impact are operator-filled. Export is a per-engagement bundle, proven by reading the written report back and hashing it into a receipt.").font(.caption2).foregroundStyle(.secondary)
 
-                Spacer()
                 Text(model.toolStatus).font(.caption).textSelection(.enabled)
-            }.padding(14).frame(minWidth: 360, idealWidth: 430, maxWidth: 560).background(panel)
+            }.padding(14).background(panel)
+            }.frame(minWidth: 360, idealWidth: 430, maxWidth: 560)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("TOOL RECEIPTS").font(.system(size: 11, weight: .bold, design: .monospaced)).foregroundStyle(acid)
