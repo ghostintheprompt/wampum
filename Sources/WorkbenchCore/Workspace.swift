@@ -96,6 +96,12 @@ public struct Session: Codable {
     public var documentCommand: String? = nil
     public var browserGoal: String? = nil
     public var browserURL: String? = nil
+    // Persisted object-ID (BOLA/IDOR) sweep config for this case: the operator configures the test
+    // identities (auth headers), object IDs and URL template once; they survive runs and restarts.
+    public var sweepMethod: String? = nil
+    public var sweepURL: String? = nil
+    public var sweepIDs: String? = nil
+    public var sweepIdentities: String? = nil
     public init() {}
 }
 public struct SessionStore {

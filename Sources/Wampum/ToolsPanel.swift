@@ -36,10 +36,10 @@ struct ToolsPanel: View {
     @State private var aiModel = ""
     @State private var aiSecret = "CANARY-7f3a-SECRET"
     @State private var aiRefusal = ""
-    @State private var bolaMethod = "GET"
-    @State private var bolaURL = ""
-    @State private var bolaIDs = "0001, 0002, 0003"
-    @State private var bolaIdentities = "owner-0001 | 0001 | Authorization: Bearer OWNER1\nattacker | | Authorization: Bearer ATTACKER"
+    // Object-ID sweep inputs persist in the case session: configure identities once, reused every run.
+    private func sweepBind(_ kp: WritableKeyPath<Session, String?>, _ def: String = "") -> Binding<String> {
+        Binding(get: { model.session[keyPath: kp] ?? def }, set: { model.session[keyPath: kp] = $0 })
+    }
     @State private var agCanary = "CANARY-7f3a-SECRET"
     @State private var agSink = "exfil.attacker.test"
     @State private var agReply = ""
@@ -159,13 +159,13 @@ struct ToolsPanel: View {
 
                 Divider()
                 Text("OBJECT-ID SWEEP (BOLA / IDOR)").font(.headline).foregroundStyle(acid)
-                HStack { Picker("", selection: $bolaMethod) { ForEach(["GET","POST","PUT","PATCH","DELETE"], id: \.self) { Text($0).tag($0) } }.frame(width: 100).labelsHidden()
-                         TextField("in-scope URL template with {id} (e.g. https://api.client.test/accounts/{id})", text: $bolaURL).textFieldStyle(.roundedBorder) }
-                TextField("object IDs (comma/space separated)", text: $bolaIDs).textFieldStyle(.roundedBorder)
-                Text("One identity per line:  label | owned-ids (comma sep) | Header: value; Header2: value2").font(.caption2).foregroundStyle(.secondary)
-                TextEditor(text: $bolaIdentities).font(.system(size: 11, design: .monospaced)).frame(height: 56).border(Color.secondary.opacity(0.3))
-                HStack { Button("Run Object-ID Sweep") { model.runBolaSweep(method: bolaMethod, urlTemplate: bolaURL.trimmingCharacters(in: .whitespaces), objectIDs: bolaIDs.split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init).filter { !$0.isEmpty }, identities: parseBolaIdentities(bolaIdentities)) }
-                             .disabled(model.replayBusy || model.busy || bolaURL.trimmingCharacters(in: .whitespaces).isEmpty || model.session.researchCase == nil)
+                HStack { Picker("", selection: sweepBind(\.sweepMethod, "GET")) { ForEach(["GET","POST","PUT","PATCH","DELETE"], id: \.self) { Text($0).tag($0) } }.frame(width: 100).labelsHidden()
+                         TextField("in-scope URL template with {id} (e.g. https://a.klaviyo.com/api/profiles/{id})", text: sweepBind(\.sweepURL)).textFieldStyle(.roundedBorder) }
+                TextField("object IDs (comma/space separated)", text: sweepBind(\.sweepIDs)).textFieldStyle(.roundedBorder)
+                Text("One identity per line:  label | owned-ids (comma sep) | Header: value; Header2: value2 — configured once, persists with the case.").font(.caption2).foregroundStyle(.secondary)
+                TextEditor(text: sweepBind(\.sweepIdentities)).font(.system(size: 11, design: .monospaced)).frame(height: 56).border(Color.secondary.opacity(0.3))
+                HStack { Button("Run Object-ID Sweep") { model.runBolaSweep(method: model.session.sweepMethod ?? "GET", urlTemplate: (model.session.sweepURL ?? "").trimmingCharacters(in: .whitespaces), objectIDs: (model.session.sweepIDs ?? "").split(whereSeparator: { $0 == "," || $0 == " " }).map(String.init).filter { !$0.isEmpty }, identities: parseBolaIdentities(model.session.sweepIdentities ?? "")) }
+                             .disabled(model.replayBusy || model.busy || (model.session.sweepURL ?? "").trimmingCharacters(in: .whitespaces).isEmpty || model.session.researchCase == nil)
                          if model.replayBusy { ProgressView().controlSize(.small) } }
                 if let b = model.bolaSignal {
                     Text(b.detail).font(.caption).foregroundStyle(b.present ? .orange : acid).textSelection(.enabled)
