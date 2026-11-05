@@ -62,7 +62,8 @@ public enum FindingGate {
         let severity = contains("cvss") || contains("severity")
             || contains("**critical**") || contains("why this is critical")
             || regex(#"(?i)\bcritical\b\s*[—:\-]"#)
-            || regex(#"(?i)\b(critical|high)\s+(severity|risk|vulnerability)\b"#)
+            // Allow one qualifier between the rating and the noun, e.g. "critical security vulnerability".
+            || regex(#"(?i)\b(critical|high)\s+(?:\w+\s+)?(severity|risk|vulnerability|bug|flaw|issue|finding)\b"#)
         if severity {
             if unverified {
                 add("severity-on-unverified", .blocker,
@@ -111,6 +112,20 @@ public enum FindingGate {
         if hasAny(["it can:", "the script can", "every action the victim", "you become the victim", "enables:"]) && !contains("observed") {
             add("asserted-impact", .warning,
                 "Impact is narrated as if it happened. Keep unproven impact in the Hypothesis section and demonstrate it before claiming it.")
+        }
+
+        // BLOCKER: a high-impact outcome stated as accomplished fact with no PoC. The dangerous
+        // artifact is a disclosure email or report that narrates full takeover / fund movement /
+        // PII access / session-token reuse while demonstrating none of it. The severity rules miss
+        // this when the text avoids the word "severity"/"CVSS"; the impact claim itself is the tell.
+        let impactTheatre = hasAny([
+            "account takeover", "transfer funds", "read pii", "steal funds",
+            "without credential theft", "without stealing credentials",
+            "extract and reuse", "reuse the victim", "reuse the session token", "modify bank details"
+        ])
+        if impactTheatre && !contains("observed") && !unverified {
+            add("asserted-takeover", .blocker,
+                "A high-impact outcome (account takeover, fund transfer, PII access, session-token reuse) is stated as accomplished fact. Demonstrate it with a proof-of-concept, keep it in a Hypothesis, or mark the claim unverified — do not present it as done.")
         }
 
         return Verdict(issues: issues)

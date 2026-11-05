@@ -52,6 +52,35 @@ final class FindingGateTests: XCTestCase {
         XCTAssertTrue(rules(v).isSuperset(of: ["severity-on-unverified", "premature-report-framing", "invented-technique"]))
     }
 
+    // Attempt 4 (the gap found in the live giggle run): a disclosure EMAIL that avoids the words
+    // "CVSS"/"severity" and the asserted-impact markers, so it slipped past the gate — while
+    // narrating full account takeover, fund transfer, PII access and session-token reuse as fact.
+    func testDisclosureEmailOverclaimBlocked() {
+        let text = """
+        Hello, I am a security researcher reporting a critical security vulnerability responsibly.
+        I have discovered an authenticated cross-site scripting (XSS) vulnerability in flash.example.com.
+        Impact: Full account takeover without credential theft — the attacker can extract and reuse the
+        victim's session token, make unauthorized API calls as the victim (modify bank details, transfer
+        funds, read PII), and use the trusted domain for phishing. Same vector as Equifax and LinkedIn.
+        """
+        let v = FindingGate.review(text)
+        XCTAssertTrue(v.blocked, "Overclaiming disclosure email was not blocked: \(rules(v))")
+        XCTAssertTrue(rules(v).isSuperset(of: ["asserted-takeover", "severity-without-poc"]),
+                      "Missing expected blockers: \(rules(v))")
+    }
+
+    // The same impact claims, but honestly framed as unverified, must NOT be blocked by the new rule.
+    func testUnverifiedImpactNotBlockedByTakeoverRule() {
+        let text = """
+        Observed (verified): the flash_channel_id parameter changes rendered content in my own session.
+        Hypothesis (unverified, requires authorized testing): if it reaches a script context, account
+        takeover via session-token reuse (CWE-79) could follow. Not tested; not a finding yet.
+        """
+        let v = FindingGate.review(text)
+        XCTAssertFalse(rules(v).contains("asserted-takeover"),
+                       "Takeover rule fired on an honestly-framed hypothesis: \(rules(v))")
+    }
+
     // True negative: an honest research note. Observed vs hypothesis separated, real taxonomy,
     // no severity, no CVE, no bounty. The gate must NOT cry wolf here.
     func testHonestResearchNotePasses() {
