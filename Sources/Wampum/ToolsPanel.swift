@@ -187,11 +187,11 @@ struct ToolsPanel: View {
 
                 Divider()
                 Text("RECON (NMAP / FFUF) — SCOPE-GATED RUN").font(.headline).foregroundStyle(acid)
-                HStack { Picker("", selection: $reconTool) { Text("nmap").tag("nmap"); Text("ffuf").tag("ffuf") }.frame(width: 110).labelsHidden()
-                         TextField(reconTool == "ffuf" ? "in-scope URL with FUZZ keyword" : "in-scope host / IP", text: $reconTarget).textFieldStyle(.roundedBorder) }
+                HStack { Picker("", selection: $reconTool) { Text("nmap").tag("nmap"); Text("ffuf").tag("ffuf"); Text("subfinder").tag("subfinder") }.frame(width: 110).labelsHidden()
+                         TextField(reconTool == "ffuf" ? "in-scope URL with FUZZ keyword" : reconTool == "subfinder" ? "in-scope apex domain" : "in-scope host / IP", text: $reconTarget).textFieldStyle(.roundedBorder) }
                 TextField("arguments (space-separated)", text: $reconArgs).textFieldStyle(.roundedBorder)
                 HStack {
-                    Button("Review & Run Recon…") { model.prepareReconRun(tool: reconTool == "ffuf" ? .ffuf : .nmap, target: reconTarget.trimmingCharacters(in: .whitespaces), extraArgs: lines(reconArgs)) }
+                    Button("Review & Run Recon…") { model.prepareReconRun(tool: reconTool == "ffuf" ? .ffuf : (reconTool == "subfinder" ? .subfinder : .nmap), target: reconTarget.trimmingCharacters(in: .whitespaces), extraArgs: lines(reconArgs)) }
                         .disabled(model.running || model.busy || reconTarget.trimmingCharacters(in: .whitespaces).isEmpty || model.session.researchCase == nil)
                     Button("Import nmap -oX / -oG results…") {
                         let panel = NSOpenPanel(); panel.canChooseFiles = true; panel.allowsMultipleSelection = false

@@ -6,7 +6,7 @@ import Foundation
 /// is open within the rules of engagement (operator reviews the exact command) and runs as a
 /// direct owned process; the gate, the review and the receipt are the controls.
 public enum ReconControl {
-    public enum Tool: String, Sendable { case nmap, ffuf }
+    public enum Tool: String, Sendable { case nmap, ffuf, subfinder }
 
     public struct Plan {
         public let executable: URL
@@ -43,9 +43,16 @@ public enum ReconControl {
             _ = try scope.authorize(url)
             host = h
             argv = ["-u", target] + extraArgs
+        case .subfinder:
+            // Passive subdomain enumeration of an authorized apex domain (queries public sources).
+            guard let authorized = try ToolScopeGate.authorize(targets: [target], scope: scope).first else {
+                throw WorkbenchError.invalid("No target authorized.")
+            }
+            host = authorized
+            argv = ["-d", host, "-silent", "-oJ"] + extraArgs
         }
         let plan = try CommandPlan.ownedTool(executable: executable, arguments: argv)
-        let receipt = ToolReceipt(tool: tool.rawValue, action: tool == .nmap ? "scan" : "fuzz", targets: [host],
+        let receipt = ToolReceipt(tool: tool.rawValue, action: tool == .nmap ? "scan" : (tool == .ffuf ? "fuzz" : "enum"), targets: [host],
                                   argument: ([executable.path] + argv).joined(separator: " "),
                                   detail: "Scope-gated recon against \(host). Open within RoE; operator-reviewed.")
         return Plan(executable: plan.executable, arguments: plan.arguments, receipt: receipt)
