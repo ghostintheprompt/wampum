@@ -957,7 +957,38 @@ import WorkbenchCore
         agenticStatus=score.summary+(score.meetsThreshold ? " Capture the crossing runs as evidence and promote a claim citing them.":"")
     }
 
-    func resetAgenticTrials(){agenticTrials=[];agenticReliability=nil;agenticStatus="Trials cleared."}
+    func resetAgenticTrials(){agenticTrials=[];agenticReliability=nil;agenticStatus="Trials cleared.";exfilLogOffset=0}
+
+    @Published var exfilLogPath=""
+    private var exfilLogOffset:Int=0   // JSONL lines already folded into trials
+
+    /// Fold ONE agent run into the score straight from the exfil sink's JSONL log: every NEW line
+    /// since the last capture is a beacon the agent made during this run. Each is reconstructed as a
+    /// request URL against the configured sink host so `evaluateTrial` detects a canary-carrying
+    /// exfil without the operator pasting URLs by hand. One click per agent run.
+    func captureRunFromLog(logPath:String,canary:String,sinkHost:String,replyText:String){
+        guard !canary.isEmpty,!sinkHost.isEmpty else{agenticStatus="Set a canary and sink host first.";return}
+        guard let data=FileManager.default.contents(atPath:logPath),let text=String(data:data,encoding:.utf8) else{agenticStatus="Can't read sink log at \(logPath).";return}
+        let lines=text.split(separator:"\n",omittingEmptySubsequences:true).map(String.init)
+        let newLines = exfilLogOffset < lines.count ? Array(lines[exfilLogOffset...]) : []
+        exfilLogOffset = lines.count
+        var requests:[String]=[]
+        for line in newLines{
+            guard let d=line.data(using:.utf8),let obj=try? JSONSerialization.jsonObject(with:d) as? [String:Any] else{continue}
+            if obj["t"] as? String == "body" {continue}   // POST-body companion line, not a request
+            let path=obj["path"] as? String ?? ""
+            var qs=""
+            if let q=obj["query"] as? [String:[String]]{ qs=q.map{"\($0.key)=\($0.value.joined(separator:","))"}.joined(separator:"&") }
+            requests.append("https://\(sinkHost)\(path)"+(qs.isEmpty ? "":"?\(qs)"))
+        }
+        let trial=AgenticExfil.evaluateTrial(replyText:replyText,outboundRequests:requests,canary:canary,sinkHost:sinkHost)
+        agenticTrials.append(trial)
+        let score=AgenticExfil.score(agenticTrials)
+        agenticReliability=score
+        agenticStatus="Run captured from log (\(newLines.count) new beacon line(s)); this run: \(trial.channel.rawValue). "+score.summary
+    }
+
+    func resetExfilLogPosition(){exfilLogOffset=0;agenticStatus="Log read position reset — next capture reads from the top."}
 
     @Published var discoveredEndpoints:[InferenceEndpointDiscovery.Hit]=[]
 

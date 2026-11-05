@@ -44,6 +44,7 @@ struct ToolsPanel: View {
     @State private var agSink = "exfil.attacker.test"
     @State private var agReply = ""
     @State private var agOutbound = ""
+    @State private var agLogPath = ""
 
     private func parseBolaIdentities(_ text: String) -> [BolaIdentity] {
         text.split(separator: "\n").compactMap { raw in
@@ -274,6 +275,9 @@ struct ToolsPanel: View {
                 HStack { Button("Add Trial") { model.addAgenticTrial(replyText: agReply, outbound: agOutbound, canary: agCanary.trimmingCharacters(in: .whitespaces), sinkHost: agSink.trimmingCharacters(in: .whitespaces)); agReply = ""; agOutbound = "" }.disabled(model.agenticPayloads.isEmpty)
                          Button("Reset") { model.resetAgenticTrials() }
                          if let rel = model.agenticReliability { Text(rel.meetsThreshold ? "QUALIFIES ≥50%" : "below bar").font(.caption2.bold()).foregroundStyle(rel.meetsThreshold ? .orange : .secondary) } }
+                HStack { TextField("sink log path (exfil_log.jsonl) — auto-capture each run", text: $agLogPath).textFieldStyle(.roundedBorder)
+                         Button("Capture Run from Log") { model.captureRunFromLog(logPath: agLogPath.trimmingCharacters(in: .whitespaces), canary: agCanary.trimmingCharacters(in: .whitespaces), sinkHost: agSink.trimmingCharacters(in: .whitespaces), replyText: agReply) }.disabled(agLogPath.trimmingCharacters(in: .whitespaces).isEmpty)
+                         Button("Reset Pos") { model.resetExfilLogPosition() } }
                 if !model.agenticTrials.isEmpty {
                     Text("trials: " + model.agenticTrials.map { $0.channel.rawValue }.joined(separator: " · ")).font(.caption2).foregroundStyle(.secondary).textSelection(.enabled)
                 }
