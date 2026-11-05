@@ -13,7 +13,7 @@ import Foundation
 /// Pure/deterministic (no DNS or HTTP here — the caller supplies the observations). A crossing is a
 /// LEAD, promoted only through captured evidence + operator review + FindingVerification.
 public enum TakeoverProbe {
-    public enum Confidence: String, Codable, Sendable { case strong, moderate, weak, none }
+    public enum Confidence: String, Codable, Sendable { case strong, moderate, weak, clear }
 
     public struct Verdict: Codable, Equatable, Sendable {
         public let host: String
@@ -61,7 +61,7 @@ public enum TakeoverProbe {
         // Target still resolves -> the record is live/claimed, not a takeover.
         if targetResolves {
             return Verdict(host: host, cnameTarget: cnameTarget, service: service, reclaimable: reclaimable,
-                           confidence: .none, detail: "CNAME target still resolves — claimed/live, no takeover.")
+                           confidence: .clear, detail: "CNAME target still resolves — claimed/live, no takeover.")
         }
         // Dangling. Strength depends on reclaimability + an unclaimed fingerprint.
         if !reclaimable {

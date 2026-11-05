@@ -36,6 +36,6 @@ final class TakeoverProbeTests: XCTestCase {
 
     func testResolvingTargetIsNone() {
         let v = TakeoverProbe.classify(host: "live.example.com", cnameTarget: "live.github.io", targetResolves: true)
-        XCTAssertEqual(v.confidence, .none)
+        XCTAssertEqual(v.confidence, .clear)
     }
 }
