@@ -1,38 +1,37 @@
-# Wampum — November 1, 2026
+# Wampum — November 5, 2026
 
-## Target
+## Focus
 
-Use Coin Droppa as the real acceptance task: Wampum must supply the selected project sources to Qwen, produce a reviewable multi-file change, apply it only after review, and leave the verified files on disk. Coin Droppa is not a RAILGUN project and has no demo release target.
+Wampum as a working red-team + defensive tool, audited live against real bug-bounty programs and an operator-owned RF lab. Bounties are the audit harness; the deliverable is a correct, intuitive tool. The earlier Coin Droppa patch-workflow acceptance task is no longer the active focus; the patch/gate path it built remains and is unchanged.
 
-## Verified
+## Shipped + verified this session
 
-- [x] The full default suite passed before the patch workflow change: 280 core and 107 app tests, with 16 opt-in skips and no failures.
-- [x] After the patch workflow change, the full suite passed: 284 core and 108 app tests, with 16 opt-in skips and no failures. `git diff --check` passed.
-- [x] November 1 current suite: 284 core and 111 app tests passed, 16 opt-in skips, zero failures. `git diff --check` passed.
-- [x] Coin Droppa's current site build publishes nine allowlisted files. Its engine smoke script passes ten checks for deterministic signatures, wallet reopening, engine startup, and balance API presence.
-- [x] Live Qwen source review returned eight quoted spans; one matched the attached sources and seven failed exact-source review. The output treated the game preview as deployable and proposed retaining RAILGUN, contrary to the owner's direction.
-- [x] `mixer.html` is 70,519 bytes. Wampum's source attachment limit is 32,000 bytes, so it could not ground a response in the main Coin Droppa file.
-- [x] Added reviewed unified-diff support for multi-file edits, new files, and requested deletions. It checks paths and patch applicability, rejects renames, binaries, symlinks, `.git`, and `.env` files, backs up changed originals locally, then opens surviving changed files in editor tabs.
-- [x] Focused patch tests passed: four core tests and one Workbench apply-to-disk test.
-- [x] A real local QA run confirmed the request preview and exposed malformed Qwen diffs. Patch review rejected both responses, including a behavior-changing diff; the disposable project remained unchanged.
-- [x] Built an isolated QA app with a private state directory and opened the Coin Droppa project in it. Normal Wampum data stays separate.
+- [x] UI: 3 surfaces (Editor/Browser/Tools) + System overflow; Tools panel wrapped in a ScrollView (lower sections were clipped/unreachable); military/terminal palette (gunmetal + gleaming tactical green).
+- [x] FindingGate hardened: blocks the overclaiming disclosure-email path (asserted takeover + broadened severity). Suite green.
+- [x] BOLA/IDOR sweep + identity matrix: confidence tiers (strong = owner-identical bytes; weak = empty/boilerplate 2xx). Validated on passive recon of Klaviyo + Internet Brands.
+- [x] Recon: ffuf lead scoring (soft-404/catch-all demoted); scope-gated subfinder orchestration; SubdomainImport + TakeoverProbe (dangling-CNAME reclaimability classifier). Validated: 25/25 Klaviyo WAF paths + 114 IB danglers correctly weak.
+- [x] Agentic-exfil harness: indirect-injection payloads (zero-click image, tool-send, subdomain/base64), sink-vs-reply detection, >=50% reliability scoring, live-capture from the sink log. Unit-tested.
+- [x] Object-ID sweep identities persist per case (configure once).
+- [x] Wireless: VM auto-detect (utmctl list) + one-click preflight doctor; launch-UTM + resilient start (retries the -1712 AppleEvent timeout). VERIFIED end-to-end on an operator-owned network (IsolaTiberina): monitor mode, 186 real 802.11 frames to a hashed pcap.
+- [x] Kali VM login reset (forgotten pw); README updated accurately; all pushed to origin.
 
-## Remaining
+## Open — next session
 
-- [x] Run the full Swift suite and `git diff --check` with reviewed patch support.
-- [x] Build and launch a separate QA app; open Coin Droppa without touching the owner's active Wampum session.
-- [ ] Through Wampum, complete the authorized Coin Droppa cleanup task from its active brief. Inspect every proposed file and keep the project's requested direction consistent; do not treat malformed or unreviewed model output as a change.
-- [ ] Verify the changed Coin Droppa files on disk, inspect the complete diff, and run the relevant build and tests.
-- [x] Reconcile README and status docs with the verified result, including the live Qwen failure and the fail-closed patch-review result.
-- [ ] Complete Coin Droppa through Wampum, verify the changed files and project checks, then publish that project result. Coin Droppa remains unfinished.
+### Bounties (audit the tool)
+- [ ] OpenAI Safety agentic-exfil (limit-blocked): get accepted on the Bugcrowd Safety program; run S2 (zero-click session exfil) live when ChatGPT Agent access/limit resets. Rig ready in `bug_bounty/openai-safety/` (sink + cloudflared tunnel + inject pages + submission templates).
+- [ ] Klaviyo BOLA (operator creds needed): create 2 test accounts, drop keys + profile IDs into the Object-ID Sweep, run the authenticated cross-tenant sweep. Contract + `sweep_targets.md` ready in `bug_bounty/klaviyo/`.
+- [ ] Prospect younger / lower-competition Bugcrowd programs for no-signup takeover + exposed-surface. Klaviyo + Internet Brands came back clean — mature programs are poor no-signup EV.
 
-Qwen's live review was an accuracy failure. The Workbench now has a multi-file patch path that can address Coin Droppa's file-size and single-file-proposal limits; the Coin Droppa acceptance task has not passed yet.
+### Tool hardening
+- [ ] Active authenticated HTTP path is still only loopback-proven — a live authenticated run (Klaviyo or an owned target) is the next real validation.
+- [ ] Wire subfinder output -> auto-run TakeoverProbe/SubdomainImport ranking in-app (the chain is coded; the in-app auto-pipeline isn't fully wired).
+- [ ] Run the IsolaTiberina capture through the full in-app wireless flow (import contract -> Run Authorized Wireless Capture -> pcap + manifest pinned as case evidence), not just the direct guest script.
+- [ ] Guest-exec reliability: utmctl exec is intermittently flaky (OSStatus -10004 noise, occasional empty returns); password-write commands (chpasswd/usermod) can jam on a stale /etc/.pwd.lock. If Wampum automates guest admin, add lock-clear + retry.
 
-## Usability workflow — verified November 1
+### UI/UX
+- [ ] Gleam/HUD polish: thin accent borders on panels (framed-console look).
+- [ ] Tools panel is still one long scroll of ~13 sections — sub-tabs (Recon / Access / AI / Wireless / Findings) would finish the navigation fix.
 
-- Normal requests attach only the active editor file; all-open-tab and source-review switches are collapsed under **Context options** and start off.
-- **Build from MD** uses a saved Markdown brief, gathers local project sources while excluding generated/vendor folders and lockfiles, prioritizes paths named in the brief, previews the exact request, and routes the returned diff through **Review Patch** / **Apply Reviewed Patch**.
-- The build context is limited to 84,000 source bytes and selects a 32K model context; omitted paths are listed in the exact request. Context preflight and patch apply/backup are covered by tests.
-- A fresh QA app opened the disposable project, listed its files, opened the brief, discovered local Qwen, and displayed the exact frozen request. The local model returned malformed diffs on two attempts; Review Patch rejected both and the fixture's `app.py` remained byte-for-byte unchanged.
-- The first QA instance had a stored project path but no readable file list. File enumeration now reports failures instead of silently returning an empty list, and the explorer explains how to reselect an inaccessible folder.
-- Coin Droppa remains the full acceptance task. Its release changes have not been applied or verified; do not mark that project ready based on Wampum transport or patch-parser tests.
+## Verification boundary (honest)
+
+Classifiers (BOLA/identity/recon/takeover) are unit-tested + validated on real passive recon data. Active authenticated HTTP tools are loopback/fixture-proven, not yet driven against a live external target. AI cores tested; the live agentic path is operator-driven and not yet run. Wireless capture is verified live on an operator-owned network. Nothing is reported that the evidence path has not promoted.
